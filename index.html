@@ -93,10 +93,9 @@
         .action-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         #admin-panel { padding-top: 2rem; }
         #admin-panel h3 { font-size: 1.2rem; margin-bottom: 1rem; }
-        #add-user-form { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
-        #add-user-form input, #add-user-form select { padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); }
-        #user-list table { width: 100%; border-collapse: collapse; }
-        #user-list th, #user-list td { padding: 8px; border: 1px solid var(--border-color); text-align: left; }
+        #admin-panel h4 { font-size: 1.1rem; margin-bottom: 0.5rem; text-align: left; }
+        #admin-panel table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; }
+        #admin-panel th, #admin-panel td { padding: 8px; border: 1px solid var(--border-color); text-align: left; }
         #report-content { width: 100%; height: 100%; position: relative; }
         .presentation-slide {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -254,6 +253,14 @@
         const googleSheetCsvURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRx4lC9-h5PdEf0MZLLnK_H-1r34JGiw7fTXQkoajPLDqmARnpC3a2qBbsXoDhJeQ/pub?output=csv';
         const googleSheetEditURL = 'https://docs.google.com/spreadsheets/d/1nJGW7svaU2JzYmW9m3r8gWR8yIqr4rwN/edit?usp=sharing&ouid=114356643503574570305&rtpof=true&sd=true';
 
+        // --- KULLANICI VERİLERİ ---
+        // Kullanıcılar artık doğrudan buradan yönetilmektedir.
+        const reportUsers = [
+            { username: 'furkanaydin', password: '041295sD.', role: 'Admin' },
+            { username: 'yönetici', password: 'shdb2025', role: 'Yönetici' },
+            { username: 'kullanıcı', password: 'shdb2022', role: 'Kullanıcı' }
+        ];
+
         // --- Global Değişkenler ---
         let bggVeriler = [];
         let kumulatifVeriler = [];
@@ -302,7 +309,6 @@
 
         const handleError = (message, details = '') => {
             console.error(message, details);
-            // Rapor içeriğini temizle ve hata mesajını göster
             reportContent.innerHTML = `
                 <div class="error-message">
                     <h3>Bir Sorun Oluştu</h3>
@@ -315,7 +321,7 @@
             header.classList.add('hidden');
         };
         
-        // --- SUNUM FONKSİYONLARI (Değişiklik yok) ---
+        // --- SUNUM FONKSİYONLARI ---
         function showSlide(index) {
             if (index < 0 || index >= presentationSlides.length || index === currentSlideIndex || isTransitioning) return;
             isTransitioning = true;
@@ -352,16 +358,14 @@
             const button = document.querySelector('.active-slide .gemini-btn');
             if(!button) return;
 
-            // API anahtarını tarayıcı hafızasından al
             const apiKey = localStorage.getItem('geminiApiKey');
             
-            // Anahtar yoksa uyarı göster ve işlemi durdur
             if (!apiKey) {
                 geminiModalOverlay.classList.remove('hidden');
                 geminiModalContent.innerHTML = `
                     <div class="error-message" style="background-color: #fff3cd; border-color: #ffeeba; color: #856404;">
                         <h3>API Anahtarı Eksik</h3>
-                        <p>Bu özelliğin çalışması için bir Google Gemini API anahtarı gereklidir. Lütfen Admin rolündeki bir kullanıcıdan, giriş sayfasındaki "Yönetim Paneli" üzerinden API anahtarını girmesini isteyin.</p>
+                        <p>Bu özelliğin çalışması için bir Google Gemini API anahtarı gereklidir. Lütfen Admin veya Yönetici rolündeki bir kullanıcıdan, giriş sayfasındaki "Yönetim Paneli" üzerinden API anahtarını girmesini isteyin.</p>
                     </div>`;
                 return;
             }
@@ -560,11 +564,14 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
             }
         }
         
-        // --- Rapor Oluşturma (renderFullReport ve alt fonksiyonlarda değişiklik yok) ---
         function renderFullReport() {
             appContainer.classList.add('hidden');
             reportContent.classList.remove('hidden');
             header.classList.remove('hidden');
+
+            const user = JSON.parse(sessionStorage.getItem('loggedInUser'));
+            const isAdminOrManager = user && (user.role === 'Admin' || user.role === 'Yönetici');
+
             const mudurlukler = [...new Set(bggVeriler.map(item => item.mudurluk))];
             navLinksContainer.innerHTML = '';
             let mapIndex = 0;
@@ -599,7 +606,9 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
                     const annualTableHTML = createAnnualDataTable(hizmetAdi, mudurlukAdi);
                     const mapHTML = ilceVerisiVarMi ? `<div class="map-wrapper" id="wrapper-${mapId}"><div class="map-container" id="${mapId}"></div></div>` : '';
                     const descriptionHTML = serviceDescriptions.has(hizmetAdi) ? `<div class="hizmet-description">${serviceDescriptions.get(hizmetAdi)}</div>` : '';
-                    slideElement.innerHTML = `<div class="slide-content-wrapper"><div class="slide-header"><div class="slide-header-text"><h2 class="mudurluk-title">${mudurlukAdi}</h2><h1 class="hizmet-title">${hizmetAdi}</h1></div><button class="gemini-btn">✨ Veriyi Yorumla</button></div>${descriptionHTML}<div class="hizmet-main-content ${ilceVerisiVarMi ? 'grid-with-map' : 'no-map'}">${mapHTML}<div class="details-column"><div><h3 class="section-title">Genel Veriler</h3><div class="breakdown-grid">${breakdownGridHTML}</div></div>${annualTableHTML}</div></div></div>`;
+                    const geminiButtonHTML = isAdminOrManager ? `<button class="gemini-btn">✨ Veriyi Yorumla</button>` : '';
+
+                    slideElement.innerHTML = `<div class="slide-content-wrapper"><div class="slide-header"><div class="slide-header-text"><h2 class="mudurluk-title">${mudurlukAdi}</h2><h1 class="hizmet-title">${hizmetAdi}</h1></div>${geminiButtonHTML}</div>${descriptionHTML}<div class="hizmet-main-content ${ilceVerisiVarMi ? 'grid-with-map' : 'no-map'}">${mapHTML}<div class="details-column"><div><h3 class="section-title">Genel Veriler</h3><div class="breakdown-grid">${breakdownGridHTML}</div></div>${annualTableHTML}</div></div></div>`;
                     reportContent.appendChild(slideElement);
                     presentationSlides.push({ element: slideElement, mudurlukId, mapId: ilceVerisiVarMi ? mapId : null, haritaTur: haritaIcinTur, mudurluk: mudurlukAdi, hizmet: hizmetAdi, kirilimlar: kirilimlar });
                 });
@@ -663,16 +672,20 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
         };
 
         // --- AUTH & USER MANAGEMENT ---
-        function initializeUsers() { if (!localStorage.getItem('reportUsers')) { const users = [{ username: 'furkanaydin', password: '041295sD.', role: 'Admin' }]; localStorage.setItem('reportUsers', JSON.stringify(users)); } }
         function handleLogin(event) {
             event.preventDefault();
             const username = event.target.username.value;
             const password = event.target.password.value;
-            const users = JSON.parse(localStorage.getItem('reportUsers')) || [];
-            const user = users.find(u => u.username === username && u.password === password);
-            if (user) { sessionStorage.setItem('loggedInUser', JSON.stringify(user)); showAppForUser(user); }
-            else { loginError.textContent = 'Kullanıcı adı veya şifre hatalı.'; loginError.classList.remove('hidden'); }
+            const user = reportUsers.find(u => u.username === username && u.password === password);
+            if (user) {
+                sessionStorage.setItem('loggedInUser', JSON.stringify(user));
+                showAppForUser(user);
+            } else {
+                loginError.textContent = 'Kullanıcı adı veya şifre hatalı.';
+                loginError.classList.remove('hidden');
+            }
         }
+
         function showAppForUser(user) {
             loginSection.classList.add('hidden');
             appContainer.classList.remove('hidden');
@@ -680,36 +693,48 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
             reportContent.classList.add('hidden');
             entryPoint.classList.remove('hidden');
             renderEntryPoint();
-            if (user.role === 'Admin') { renderAdminPanel(); }
+            
+            // Sadece Admin veya Yönetici ise yönetim panelini göster
+            if (user.role === 'Admin' || user.role === 'Yönetici') {
+                renderAdminPanel(user);
+            }
         }
-        function renderAdminPanel() {
-            const adminContainer = document.getElementById('admin-panel-container');
-            adminContainer.innerHTML = `
-                <div class="entry-point-section" id="admin-panel">
-                    <h3>Kullanıcı Yönetimi</h3>
-                    <form id="add-user-form">
-                        <input type="text" id="new-username" placeholder="Yeni Kullanıcı Adı" required>
-                        <input type="password" id="new-password" placeholder="Şifre" required>
-                        <select id="new-role">
-                            <option value="Kullanıcı">Kullanıcı</option>
-                            <option value="Yönetici">Yönetici</option>
-                        </select>
-                        <button type="submit" class="action-btn">Kullanıcı Ekle</button>
-                    </form>
-                    <div id="user-list" style="margin-bottom: 2rem;"></div>
 
-                    <h3>API Anahtar Yönetimi</h3>
-                    <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">Gemini "Veriyi Yorumla" özelliğinin çalışması için bir API anahtarı gereklidir.</p>
+        function renderAdminPanel(user) {
+            const adminContainer = document.getElementById('admin-panel-container');
+            
+            let userListSectionHTML = '';
+            // Sadece Admin kullanıcı listesini görebilir
+            if (user.role === 'Admin') {
+                let userListHTML = '<table><thead><tr><th>Kullanıcı Adı</th><th>Şifre</th><th>Rol</th></tr></thead><tbody>';
+                reportUsers.forEach(u => {
+                    userListHTML += `<tr><td>${u.username}</td><td>${u.password}</td><td>${u.role}</td></tr>`;
+                });
+                userListHTML += '</tbody></table>';
+                userListSectionHTML = `
+                    <div>
+                        <h4>Kullanıcı Bilgileri</h4>
+                        ${userListHTML}
+                    </div>`;
+            }
+
+            const apiKeySectionHTML = `
+                <div>
+                    <h4>API Anahtar Yönetimi</h4>
+                    <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem; text-align: left;">Gemini "Veriyi Yorumla" özelliğinin çalışması için bir API anahtarı gereklidir.</p>
                     <form id="api-key-form" style="display: flex; gap: 1rem; align-items: center;">
                         <input type="password" id="api-key-input" placeholder="Google AI Studio API Anahtarını Girin" required style="flex-grow: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
                         <button type="submit" class="action-btn">Kaydet</button>
                     </form>
                 </div>`;
+
+            adminContainer.innerHTML = `
+                <div class="entry-point-section" id="admin-panel">
+                    <h3>Yönetim Paneli</h3>
+                    ${userListSectionHTML}
+                    ${apiKeySectionHTML}
+                </div>`;
             
-            renderUserList();
-            document.getElementById('add-user-form').addEventListener('submit', handleAddUser);
-            
-            // API Anahtarını yönet
             const apiKeyInput = document.getElementById('api-key-input');
             const storedKey = localStorage.getItem('geminiApiKey');
             if (storedKey) {
@@ -728,44 +753,16 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
                 alert('Lütfen geçerli bir API anahtarı girin.');
             }
         }
-
-        function renderUserList() {
-            const users = JSON.parse(localStorage.getItem('reportUsers')) || [];
-            const userListContainer = document.getElementById('user-list');
-            let tableHTML = '<table><thead><tr><th>Kullanıcı Adı</th><th>Rol</th><th>İşlem</th></tr></thead><tbody>';
-            users.forEach(user => { tableHTML += `<tr><td>${user.username}</td><td>${user.role}</td><td>${user.role !== 'Admin' ? `<button class="action-btn secondary" data-username="${user.username}" style="padding: 5px 10px; font-size: 0.8rem;">Sil</button>` : ''}</td></tr>`; });
-            tableHTML += '</tbody></table>';
-            userListContainer.innerHTML = tableHTML;
-            userListContainer.querySelectorAll('button').forEach(button => { button.addEventListener('click', handleDeleteUser); });
-        }
-        function handleAddUser(event) {
-            event.preventDefault();
-            const newUsername = document.getElementById('new-username').value;
-            const newPassword = document.getElementById('new-password').value;
-            const newRole = document.getElementById('new-role').value;
-            const users = JSON.parse(localStorage.getItem('reportUsers')) || [];
-            if (users.some(u => u.username === newUsername)) { alert('Bu kullanıcı adı zaten mevcut.'); return; }
-            users.push({ username: newUsername, password: newPassword, role: newRole });
-            localStorage.setItem('reportUsers', JSON.stringify(users));
-            renderUserList();
-            event.target.reset();
-        }
-        function handleDeleteUser(event) {
-            const usernameToDelete = event.target.dataset.username;
-            if (confirm(`'${usernameToDelete}' kullanıcısını silmek istediğinizden emin misiniz?`)) {
-                let users = JSON.parse(localStorage.getItem('reportUsers')) || [];
-                users = users.filter(u => u.username !== usernameToDelete);
-                localStorage.setItem('reportUsers', JSON.stringify(users));
-                renderUserList();
-            }
-        }
         
         // --- Sayfa Yükleme Olayları ---
         window.addEventListener('DOMContentLoaded', () => {
-            initializeUsers();
             const user = JSON.parse(sessionStorage.getItem('loggedInUser'));
-            if (user) { showAppForUser(user); }
-            else { loginSection.classList.remove('hidden'); appContainer.classList.add('hidden'); }
+            if (user) {
+                showAppForUser(user);
+            } else {
+                loginSection.classList.remove('hidden');
+                appContainer.classList.add('hidden');
+            }
         });
         loginForm.addEventListener('submit', handleLogin);
         document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') changeSlide(1); else if (e.key === 'ArrowLeft') changeSlide(-1); });
@@ -776,12 +773,15 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
             const originalBtnText = pdfBtn.textContent;
             pdfBtn.disabled = true;
             pdfBtn.textContent = 'İndiriliyor...';
+            fullscreenBtn.classList.add('hidden'); // Tam ekran butonunu gizle
+
             const { jsPDF } = window.jspdf;
             const slidesToCapture = document.querySelectorAll('.presentation-slide');
             if (slidesToCapture.length === 0) {
                 alert("PDF oluşturulacak slayt bulunamadı.");
                 pdfBtn.disabled = false;
                 pdfBtn.textContent = originalBtnText;
+                fullscreenBtn.classList.remove('hidden'); // Butonu tekrar göster
                 return;
             }
             const originalSlideIndex = currentSlideIndex;
@@ -811,6 +811,7 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
                 showSlide(originalSlideIndex); 
                 pdfBtn.disabled = false;
                 pdfBtn.textContent = originalBtnText;
+                fullscreenBtn.classList.remove('hidden'); // Butonu her durumda geri getir
             }
         }
         
