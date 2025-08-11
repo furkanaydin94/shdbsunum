@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gelişmiş İnteraktif Veri Sunumu</title>
+
+    <!-- Gerekli Kütüphaneler -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <!-- PDF İndirme Kütüphaneleri -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- CSV Parse Kütüphanesi -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary-accent: #3A6EA5;
+            --background-body: #F4F6F9;
+            --background-card: #FFFFFF;
+            --text-primary: #1E214F;
+            --text-secondary: #5a647e;
+            --border-color: #e9ecef;
+            --shadow-color: rgba(30, 33, 79, 0.06);
+            --slide-transition-duration: 0.5s;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { 
+            height: 100%;
+            overflow: hidden;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            color: var(--text-primary);
+            background-color: var(--background-body);
+            display: flex;
+            flex-direction: column;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .container { width: 95%; max-width: 1600px; margin: 0 auto; padding: 0 15px; }
+        header {
+            position: sticky; top: 0; z-index: 1000;
+            background: linear-gradient(90deg, #3A6EA5 0%, #1E214F 100%);
+            padding: 0.5rem 0;
+            color: #ffffff;
+            flex-shrink: 0;
+        }
+        .navbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+        .logo-container img { height: 60px; display: block; }
+        .horizontal-nav { flex-grow: 1; overflow: hidden; }
+        .horizontal-nav ul {
+            display: flex; flex-wrap: nowrap; overflow-x: auto;
+            list-style: none; margin: 0; padding: 5px 0; gap: 0.1rem;
+            -ms-overflow-style: none; scrollbar-width: none;
+        }
+        .horizontal-nav ul::-webkit-scrollbar { display: none; }
+        .horizontal-nav a {
+            color: rgba(255, 255, 255, 0.85); padding: 2px 5px;
+            text-decoration: none; display: block; border-radius: 6px; transition: all 0.25s ease;
+            font-size: 0.7rem; font-weight: 500; white-space: nowrap; cursor: pointer;
+            border: 1px solid transparent;
+        }
+        .horizontal-nav a:hover { background-color: rgba(255, 255, 255, 0.1); color: #FFFFFF; }
+        .horizontal-nav a.active-nav-link { background-color: rgba(255, 255, 255, 0.2); font-weight: 600; }
+        main { flex-grow: 1; position: relative; display: flex; align-items: center; justify-content: center; }
+        #login-section {
+            background-color: var(--background-card); padding: 2rem 3rem 3rem 3rem; border-radius: 16px;
+            text-align: center; max-width: 450px; margin: 2rem auto;
+            border: 1px solid var(--border-color); box-shadow: 0 8px 25px var(--shadow-color);
+        }
+        #login-section h2 { font-size: 1.8rem; margin-bottom: 2rem; }
+        .form-group { margin-bottom: 1.5rem; text-align: left; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
+        .form-group input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); font-size: 1rem; }
+        #login-error { color: #e53e3e; margin-top: 1rem; font-weight: 500; }
+        .entry-point-section {
+            background-color: var(--background-card); padding: 2rem 3rem 3rem 3rem; border-radius: 16px;
+            text-align: center; max-width: 650px; margin: 2rem auto;
+            border: 1px solid var(--border-color); box-shadow: 0 8px 25px var(--shadow-color);
+        }
+        .entry-point-section h2 { font-size: 1.5rem; margin-bottom: 1rem; color: var(--text-primary); }
+        .entry-point-section p { color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.6; }
+        .button-group { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+        .action-btn { background-color: var(--primary-accent); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 1rem; transition: all 0.2s ease; }
+        .action-btn.secondary { background-color: var(--background-body); color: var(--text-primary); border: 1px solid var(--border-color); }
+        .action-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        #admin-panel { padding-top: 2rem; }
+        #admin-panel h3 { font-size: 1.2rem; margin-bottom: 1rem; }
+        #add-user-form { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        #add-user-form input, #add-user-form select { padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); }
+        #user-list table { width: 100%; border-collapse: collapse; }
+        #user-list th, #user-list td { padding: 8px; border: 1px solid var(--border-color); text-align: left; }
+        #report-content { width: 100%; height: 100%; position: relative; }
+        .presentation-slide {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            padding: 1.5rem 0; opacity: 0; display: flex;
+            justify-content: center; align-items: flex-start;
+            overflow-y: auto; pointer-events: none;
+            transition: opacity var(--slide-transition-duration) ease-in-out;
+        }
+        .presentation-slide.active-slide { opacity: 1; z-index: 10; pointer-events: auto; }
+        .slide-content-wrapper {
+            width: 95%; max-width: 1400px; background-color: var(--background-card);
+            padding: 2rem; border-radius: 12px;
+            box-shadow: 0 6px 20px var(--shadow-color); border: 1px solid var(--border-color);
+        }
+        .slide-header { 
+            display: flex; justify-content: space-between; align-items: flex-start;
+            margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-color); 
+        }
+        .slide-header-text { flex-grow: 1; }
+        .mudurluk-title { font-size: 1rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.25rem; }
+        .hizmet-title { font-size: 2rem; font-weight: 700; color: var(--text-primary); }
+        .hizmet-description {
+            font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.5rem;
+            padding: 1rem; background-color: #f8f9fa;
+            border-left: 4px solid var(--primary-accent); border-radius: 0 4px 4px 0;
+            line-height: 1.6;
+        }
+        .hizmet-main-content { display: grid; gap: 1.5rem; }
+        .hizmet-main-content.grid-with-map { grid-template-columns: 1.2fr 1fr; }
+        .hizmet-main-content.no-map { display: flex; justify-content: center; }
+        .hizmet-main-content.no-map .details-column { width: 100%; max-width: 800px; }
+        .map-wrapper { 
+            position: relative; border-radius: 12px; overflow: hidden; 
+            border: 1px solid var(--border-color); transition: all 0.3s ease-in-out;
+        }
+        .map-container { width: 100%; height: 100%; min-height: 450px; background: #e9ecef; }
+        .map-wrapper.fullscreen-map { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 5000; border-radius: 0; border: none; }
+        .details-column { display: flex; flex-direction: column; gap: 1.5rem; }
+        .section-title { font-size: 1rem; font-weight: 600; color: var(--text-primary); margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
+        .breakdown-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+        .breakdown-card { background-color: var(--background-body); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; transition: all 0.2s ease-in-out; }
+        .breakdown-card:hover { border-color: var(--primary-accent); transform: translateY(-3px); }
+        .breakdown-card h3 { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.25rem; font-weight: 500; }
+        .breakdown-card .card-value { font-size: 1.6rem; font-weight: 700; color: var(--text-primary); }
+        .annual-data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .annual-data-table th, .annual-data-table td { padding: 0.6rem; text-align: center; border-bottom: 1px solid var(--border-color); }
+        .annual-data-table th { font-weight: 600; color: var(--text-secondary); background-color: #f8f9fa; }
+        .annual-data-table th:first-child, .annual-data-table td:first-child { text-align: left; }
+        .hidden { display: none !important; }
+        .presentation-controls { display: flex; align-items: center; gap: 0.75rem; }
+        #slide-counter { font-size: 0.85rem; font-weight: 500; letter-spacing: 1px; }
+        #fullscreen-btn { background: none; border: 1px solid rgba(255, 255, 255, 0.5); color: rgba(255, 255, 255, 0.85); width: 34px; height: 34px; border-radius: 8px; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; }
+        #fullscreen-btn:hover { background-color: rgba(255, 255, 255, 0.1); border-color: #fff; color: #fff; }
+        .gemini-btn {
+            background-color: var(--primary-accent); color: white; border: none; padding: 8px 16px;
+            border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 0.85rem;
+            transition: background-color 0.2s, transform 0.2s; flex-shrink: 0;
+        }
+        .gemini-btn:hover { background-color: #1E214F; transform: translateY(-2px); }
+        .gemini-btn:disabled { background-color: #a0aec0; cursor: not-allowed; }
+        #gemini-modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center;
+            z-index: 6000;
+        }
+        #gemini-modal {
+            background: white; padding: 2rem; border-radius: 12px;
+            width: 90%; max-width: 900px; position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2); line-height: 1.7;
+            color: var(--text-secondary);
+        }
+        #gemini-close-btn { position: absolute; top: 10px; right: 15px; background: none; border: none; font-size: 2rem; cursor: pointer; color: #aaa; }
+        #gemini-close-btn:hover { color: #333; }
+        .loading-spinner {
+            border: 4px solid #f3f3f3; border-top: 4px solid var(--primary-accent);
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite; margin: 20px auto;
+        }
+        .error-message {
+            padding: 1.5rem;
+            background-color: #fff5f5;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            border-radius: 8px;
+            text-align: left;
+        }
+        .error-message h3 { margin-bottom: 0.5rem; }
+        .error-message code {
+            background-color: #f8d7da;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @media (max-width: 1200px) { .hizmet-main-content.grid-with-map { grid-template-columns: 1fr; } }
+        @media (max-width: 992px) { .navbar { flex-wrap: wrap; justify-content: center; gap: 1rem; } }
+    </style>
+</head>
+<body>
+    <header class="hidden">
+        <div class="container navbar">
+            <div class="logo-container">
+                <img src="https://i.imgur.com/UUOeqIx.png" alt="Logo">
+            </div>
+            <nav class="horizontal-nav">
+                <ul id="mudurluk-links"></ul>
+            </nav>
+            <div class="presentation-controls">
+                <span id="slide-counter"></span>
+                <button id="fullscreen-btn" title="Tam Ekran">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/></svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div id="login-section">
+            <h2>Giriş Yap</h2>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="username">Kullanıcı Adı</label>
+                    <input type="text" id="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Şifre</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button type="submit" class="action-btn">Giriş Yap</button>
+                <p id="login-error" class="hidden"></p>
+            </form>
+        </div>
+
+        <div id="app-container" class="hidden">
+            <div id="entry-point" class="entry-point-section">
+                <!-- Bu alan JS tarafından doldurulacak -->
+            </div>
+            <div id="admin-panel-container"></div>
+        </div>
+
+        <div id="report-content" class="hidden"></div>
+    </main>
+
+    <!-- Gemini Modal HTML -->
+    <div id="gemini-modal-overlay" class="hidden">
+        <div id="gemini-modal">
+            <button id="gemini-close-btn">&times;</button>
+            <div id="gemini-modal-content"></div>
+        </div>
+    </div>
+    
+    <script>
+        // --- URL SABİTLERİ ---
+        const googleSheetCsvURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRx4lC9-h5PdEf0MZLLnK_H-1r34JGiw7fTXQkoajPLDqmARnpC3a2qBbsXoDhJeQ/pub?output=csv';
+        const googleSheetEditURL = 'https://docs.google.com/spreadsheets/d/1nJGW7svaU2JzYmW9m3r8gWR8yIqr4rwN/edit?usp=sharing&ouid=114356643503574570305&rtpof=true&sd=true';
+
+        // --- Global Değişkenler ---
+        let bggVeriler = [];
+        let kumulatifVeriler = [];
+        let serviceDescriptions = new Map();
+        let istanbulGeoJSON;
+        let mapInstances = {};
+        let presentationSlides = []; 
+        let currentSlideIndex = 0;
+        let isTransitioning = false;
+
+        // --- DOM Elementleri ---
+        const reportContent = document.getElementById('report-content');
+        const entryPoint = document.getElementById('entry-point');
+        const header = document.querySelector('header');
+        const loginSection = document.getElementById('login-section');
+        const appContainer = document.getElementById('app-container');
+        const loginForm = document.getElementById('login-form');
+        const loginError = document.getElementById('login-error');
+        
+        const navLinksContainer = document.getElementById('mudurluk-links');
+        const slideCounter = document.getElementById('slide-counter');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const geminiModalOverlay = document.getElementById('gemini-modal-overlay');
+        const geminiModalContent = document.getElementById('gemini-modal-content');
+        const geminiCloseBtn = document.getElementById('gemini-close-btn');
+
+        // --- Yardımcı Fonksiyonlar ---
+        const getDistrictName = (props) => {
+            let name = props.name || props.AD || props.display_name || props['ilce_adi'] || (props.address && props.address.city_district) || null;
+            if (name && typeof name === 'string') name = name.split(',')[0].trim();
+            return name;
+        };
+        const formatNumber = (num) => (typeof num === 'number') ? num.toLocaleString('tr-TR') : 'N/A';
+        const formatCurrency = (num) => (typeof num === 'number') ? num.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }) : 'N/A';
+        
+        const excelDateToYear = (dateInput) => {
+            const date = new Date(dateInput);
+            if (date instanceof Date && !isNaN(date)) {
+                return date.getFullYear();
+            }
+            if (typeof dateInput === 'number' && dateInput > 1) {
+                return new Date(Math.round((dateInput - 25569) * 86400 * 1000)).getFullYear();
+            }
+            return null;
+        };
+
+        const handleError = (message, details = '') => {
+            console.error(message, details);
+            // Rapor içeriğini temizle ve hata mesajını göster
+            reportContent.innerHTML = `
+                <div class="error-message">
+                    <h3>Bir Sorun Oluştu</h3>
+                    <p>${message}</p>
+                    ${details ? `<p><strong>Teknik Detay:</strong> <code>${details}</code></p>` : ''}
+                    <p style="margin-top: 1rem;">Lütfen internet bağlantınızı kontrol edin ve Google Sheets dosyasının doğru şekilde "Web'de yayınlandığından" emin olun. Sorun devam ederse, tarayıcınızın Geliştirici Konsolu'nu (F12) kontrol edin.</p>
+                </div>`;
+            reportContent.classList.remove('hidden');
+            appContainer.classList.add('hidden');
+            header.classList.add('hidden');
+        };
+        
+        // --- SUNUM FONKSİYONLARI (Değişiklik yok) ---
+        function showSlide(index) {
+            if (index < 0 || index >= presentationSlides.length || index === currentSlideIndex || isTransitioning) return;
+            isTransitioning = true;
+            const outgoingSlide = presentationSlides[currentSlideIndex].element;
+            const incomingSlide = presentationSlides[index].element;
+            const activeNav = navLinksContainer.querySelector('.active-nav-link');
+            if (activeNav) activeNav.classList.remove('active-nav-link');
+            const newNavLink = navLinksContainer.querySelector(`[data-mudurluk-id="${presentationSlides[index].mudurlukId}"]`);
+            if (newNavLink) newNavLink.classList.add('active-nav-link');
+            outgoingSlide.classList.remove('active-slide');
+            incomingSlide.classList.add('active-slide');
+            currentSlideIndex = index;
+            slideCounter.textContent = `${currentSlideIndex + 1} / ${presentationSlides.length}`;
+            setTimeout(() => { isTransitioning = false; }, 500);
+            const slideData = presentationSlides[index];
+            if (slideData.mapId && !mapInstances[slideData.mapId]) {
+                initializeMapForService(slideData.mapId, slideData.hizmet, slideData.haritaTur, slideData.mudurluk);
+            } else if (slideData.mapId && mapInstances[slideData.mapId]) {
+                setTimeout(() => mapInstances[slideData.mapId].invalidateSize(), 550);
+            }
+        }
+        function changeSlide(direction) { showSlide(currentSlideIndex + direction); }
+        function toggleFullscreen() { if (!document.fullscreenElement) { document.documentElement.requestFullscreen(); } else { document.exitFullscreen(); } }
+        function toggleMapFullscreen(mapId) {
+            const wrapper = document.getElementById(`wrapper-${mapId}`);
+            const map = mapInstances[mapId];
+            if (!wrapper || !map) return;
+            wrapper.classList.toggle('fullscreen-map');
+            setTimeout(() => { map.invalidateSize(); }, 150);
+        }
+
+        // --- Gemini API Fonksiyonları (Değişiklik yok) ---
+        async function handleGeminiRequest() {
+            const button = document.querySelector('.active-slide .gemini-btn');
+            if(!button) return;
+            button.disabled = true;
+            geminiModalOverlay.classList.remove('hidden');
+            geminiModalContent.innerHTML = '<div class="loading-spinner"></div>';
+            try {
+                const slideData = presentationSlides[currentSlideIndex];
+                const bggHizmetData = bggVeriler.filter(v => v.mudurluk === slideData.mudurluk && v.hizmet === slideData.hizmet);
+                const kumulatifHizmetData = kumulatifVeriler.filter(v => v.mudurluk === slideData.mudurluk && v.hizmet === slideData.hizmet);
+                let kirilimlarStr = '';
+                slideData.kirilimlar.forEach(k => {
+                    const toplamDeger = bggHizmetData.filter(item => item.tur === k).reduce((sum, item) => sum + (item.deger || 0), 0);
+                    kirilimlarStr += `- ${k}: ${formatNumber(toplamDeger)}\n`;
+                });
+                let yillikVeriStr = '';
+                const yillikVeri = {};
+                kumulatifHizmetData.forEach(row => {
+                    const year = excelDateToYear(row.sonTarih);
+                    if (!year) return;
+                    if (!yillikVeri[year]) yillikVeri[year] = 0;
+                    yillikVeri[year] += row.deger;
+                });
+                const sortedYears = Object.keys(yillikVeri).sort();
+                if(sortedYears.length > 0) { yillikVeriStr = sortedYears.map(year => `${year}: ${formatNumber(yillikVeri[year])}`).join('\n'); }
+                let enYogunIlcelerStr = '';
+                if(slideData.mapId) {
+                    const localMapData = {};
+                    const ilceVerileri = bggVeriler.filter(item => item.mudurluk === slideData.mudurluk && item.hizmet === slideData.hizmet && item.lokasyon && item.lokasyon.trim() !== "İstanbul Geneli" && item.lokasyon.trim() !== "Diğer" && item.tur === slideData.haritaTur);
+                    ilceVerileri.forEach(item => { if (item.lokasyon) localMapData[item.lokasyon] = (localMapData[item.lokasyon] || 0) + item.deger; });
+                    const sortedDistricts = Object.entries(localMapData).sort(([, a], [, b]) => b - a).slice(0, 5).map(d => `${d[0]}: ${formatNumber(d[1])}`);
+                    if(sortedDistricts.length > 0) { enYogunIlcelerStr = sortedDistricts.join('\n'); }
+                }
+                const prompt = `Sen İBB için çalışan bir veri analistisin. Aşağıdaki verileri kullanarak dengeli, ne çok uzun ne de çok kısa, birkaç paragraflık bir analiz yap. Analizin, hizmetin açıklamasına sadık kalarak genel verileri, yıllık trendleri ve ilçe dağılımını (varsa) öz bir şekilde yorumlamalıdır. Eksik veri hakkında yorum yapma (örneğin, ilçe verisi yoksa bu konuya hiç girme; tek bir yıllık veri varsa hizmetin yeni olduğunu belirt).
+
+**Analiz Adımları:**
+1.  **Hizmet Özeti:** Hizmetin amacını açıklamasından yola çıkarak bir cümleyle özetle. Ardından, en önemli genel veriyi (genellikle en büyük sayı) vurgulayarak mevcut durumu belirt.
+2.  **Yıllık Gelişim:** Eğer birden fazla yıla ait veri varsa, yıllar içindeki ana eğilimi (artış/azalış) kısaca yorumla. Eğer sadece tek bir yıla ait veri varsa, bu hizmetin bu yılda başladığını veya verisinin bu yıldan itibaren tutulduğunu belirt.
+3.  **Coğrafi Yoğunluk:** Eğer ilçe verisi mevcutsa, hizmetin en yoğun olduğu ilk birkaç ilçeyi sırala.
+4.  **Genel Sonuç:** Tüm bu bilgilere dayanarak hizmetin genel etkisini tek bir cümleyle özetle.
+
+Lütfen bu yapıya sadık kalarak, profesyonel ve anlaşılır bir metin oluştur.
+
+**VERİLER:**
+
+- **Hizmet:** ${slideData.hizmet}
+- **Açıklama:** ${serviceDescriptions.get(slideData.hizmet) || 'Açıklama yok.'}
+- **Genel Veriler:**
+${kirilimlarStr}
+- **Yıllık Veriler:**
+${yillikVeriStr || 'Yıllık veri bulunmuyor.'}
+- **Yoğun İlçeler:**
+${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
+                let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = "AIzaSyDAJjUwXA_Wab2Yj266k__A-PoSio0klXg";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if(!response.ok) throw new Error(`API Hatası: ${response.statusText}`);
+                const result = await response.json();
+                if (result.candidates && result.candidates.length > 0) { const text = result.candidates[0].content.parts[0].text; geminiModalContent.innerHTML = text.replace(/\n/g, '<br>'); }
+                else { throw new Error("API'den geçerli bir yanıt alınamadı."); }
+            } catch (error) { console.error("Gemini API isteği başarısız oldu:", error); geminiModalContent.innerText = `Bir hata oluştu: ${error.message}`;
+            } finally { button.disabled = false; }
+        }
+        
+        // --- Veri Yükleme ve İşleme ---
+        function loadDataFromGoogleSheets(onComplete) {
+            appContainer.classList.add('hidden');
+            reportContent.innerHTML = '<div class="loading-spinner"></div>';
+            reportContent.classList.remove('hidden');
+
+            console.log("Google Sheets'ten veriler çekiliyor...");
+            Papa.parse(googleSheetCsvURL, {
+                download: true,
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    console.log("Veriler başarıyla çekildi.");
+                    // Hata kontrolü: PapaParse bazen boş veri veya hata nesnesi dönebilir
+                    if (results.errors.length > 0) {
+                        handleError("CSV dosyası okunurken bir hata oluştu.", results.errors.map(e => e.message).join(', '));
+                        return;
+                    }
+                    processAndRenderReport(results.data, onComplete);
+                },
+                error: (err) => {
+                    handleError("Google Sheets verisi çekilirken bir ağ veya CORS hatası oluştu.", err.message);
+                }
+            });
+        }
+        
+        function processAndRenderReport(jsonData, onComplete) {
+            try {
+                // Global değişkenleri ve rapor içeriğini temizle
+                Object.values(mapInstances).forEach(map => map.remove());
+                mapInstances = {};
+                reportContent.innerHTML = ''; // Hata durumunda spinner'ı temizlemek için burada
+                presentationSlides = [];
+                currentSlideIndex = 0;
+                serviceDescriptions.clear();
+
+                if (!jsonData || jsonData.length === 0) {
+                    throw new Error("Google Sheets'ten veri okunamadı veya dosya boş.");
+                }
+                
+                // Sütun başlıklarının Excel'deki ile tam olarak eşleştiğinden emin olun.
+                const cleanedData = jsonData.map(row => ({
+                    mudurluk: row['Müdürlük'] && typeof row['Müdürlük'] === 'string' ? row['Müdürlük'].trim() : null,
+                    hizmet: row['Hizmet Başlığı'] && typeof row['Hizmet Başlığı'] === 'string' ? row['Hizmet Başlığı'].trim() : null,
+                    tur: row['Tür'] && typeof row['Tür'] === 'string' ? row['Tür'].trim() : null,
+                    lokasyon: row['Lokasyon'] && typeof row['Lokasyon'] === 'string' ? row['Lokasyon'].trim() : null,
+                    veriAraligi: row['Veri Aralığı'] ? row['Veri Aralığı'].toString().trim() : null,
+                    deger: parseFloat(row['Değer']) || 0,
+                    sonTarih: row['Son Tarih'],
+                })).filter(row => row.mudurluk && row.hizmet && row.veriAraligi);
+
+                bggVeriler = cleanedData.filter(row => row.veriAraligi?.toLocaleUpperCase('tr-TR') === 'BGG');
+                kumulatifVeriler = cleanedData.filter(row => row.veriAraligi?.toLocaleUpperCase('tr-TR') === 'KÜMÜLATİF');
+
+                jsonData.forEach(row => {
+                     const hizmet = row['Hizmet Başlığı'] && typeof row['Hizmet Başlığı'] === 'string' ? row['Hizmet Başlığı'].trim() : null;
+                     const aciklama = row['Açıklama'] && typeof row['Açıklama'] === 'string' ? row['Açıklama'].trim() : null;
+                     if (hizmet && aciklama && !serviceDescriptions.has(hizmet)) {
+                         serviceDescriptions.set(hizmet, aciklama);
+                     }
+                });
+
+                if (bggVeriler.length === 0) {
+                    throw new Error('Dosyada "Veri Aralığı" sütununda "BGG" olan geçerli veri bulunamadı. Lütfen sütun başlıklarını ve içeriğini kontrol edin.');
+                }
+
+                // GeoJSON verisini çek ve başarılı olursa raporu oluştur
+                fetch('https://raw.githubusercontent.com/sahircansurmeli/istanbul-geojson/master/ilce_geojson.json')
+                    .then(response => {
+                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                        return response.json();
+                    })
+                    .then(geojsonData => {
+                        istanbulGeoJSON = geojsonData;
+                        renderFullReport();
+                        if (onComplete) onComplete();
+                    })
+                    .catch(err => {
+                        handleError("Harita verisi (GeoJSON) yüklenirken bir hata oluştu.", err.message);
+                    });
+
+            } catch (err) {
+                handleError("Veriler işlenirken bir hata oluştu.", err.message);
+            }
+        }
+
+        // --- Başlangıç ve Kullanıcı Yönetimi ---
+        function renderEntryPoint() {
+            const user = JSON.parse(sessionStorage.getItem('loggedInUser'));
+            let buttonsHTML = `
+                <button id="view-report-btn" class="action-btn">Raporu Görüntüle</button>
+                <button id="download-report-btn" class="action-btn">Raporu İndir</button>
+            `;
+
+            if (user.role === 'Admin' || user.role === 'Yönetici') {
+                buttonsHTML += `<button id="update-data-btn" class="action-btn secondary">Verileri Güncelle</button>`;
+            }
+
+            entryPoint.innerHTML = `
+                <h2>Rapor Sistemine Hoş Geldiniz</h2>
+                <p>Başlamak için raporu görüntüleyebilir, PDF olarak indirebilir veya Google Sheets üzerindeki verileri güncelleyebilirsiniz.</p>
+                <div class="button-group">
+                    ${buttonsHTML}
+                </div>
+            `;
+
+            document.getElementById('view-report-btn').addEventListener('click', () => loadDataFromGoogleSheets(null));
+            document.getElementById('download-report-btn').addEventListener('click', () => loadDataFromGoogleSheets(handlePdfDownload));
+
+            if (document.getElementById('update-data-btn')) {
+                document.getElementById('update-data-btn').addEventListener('click', () => {
+                    window.open(googleSheetEditURL, '_blank');
+                });
+            }
+        }
+        
+        // --- Rapor Oluşturma (renderFullReport ve alt fonksiyonlarda değişiklik yok) ---
+        function renderFullReport() {
+            appContainer.classList.add('hidden');
+            reportContent.classList.remove('hidden');
+            header.classList.remove('hidden');
+            const mudurlukler = [...new Set(bggVeriler.map(item => item.mudurluk))];
+            navLinksContainer.innerHTML = '';
+            let mapIndex = 0;
+            mudurlukler.forEach(mudurlukAdi => {
+                const mudurlukId = 'mudurluk-' + mudurlukAdi.replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
+                const hizmetler = [...new Set(bggVeriler.filter(v => v.mudurluk === mudurlukAdi).map(item => item.hizmet))];
+                const navListItem = document.createElement('li');
+                const navLink = document.createElement('a');
+                navLink.textContent = mudurlukAdi;
+                navLink.dataset.mudurlukId = mudurlukId;
+                navLink.addEventListener('click', () => {
+                    const firstSlideIndex = presentationSlides.findIndex(s => s.mudurlukId === mudurlukId);
+                    if (firstSlideIndex !== -1) showSlide(firstSlideIndex);
+                });
+                navListItem.appendChild(navLink);
+                navLinksContainer.appendChild(navListItem);
+                hizmetler.forEach(hizmetAdi => {
+                    const slideElement = document.createElement('div');
+                    slideElement.className = 'presentation-slide';
+                    const bggHizmetData = bggVeriler.filter(v => v.mudurluk === mudurlukAdi && v.hizmet === hizmetAdi);
+                    const kirilimlar = [...new Set(bggHizmetData.map(item => item.tur))].filter(Boolean);
+                    if (kirilimlar.length === 0) return;
+                    const ilceVerisiVarMi = bggHizmetData.some(d => d.lokasyon && d.lokasyon.trim() !== "İstanbul Geneli" && d.lokasyon.trim() !== "Diğer");
+                    let haritaIcinTur = ilceVerisiVarMi ? kirilimlar[0] : null;
+                    const mapId = `map-${mapIndex++}`;
+                    let breakdownGridHTML = '';
+                    kirilimlar.forEach(kirilimAdi => {
+                        const toplamDeger = bggHizmetData.filter(item => item.tur === kirilimAdi).reduce((sum, item) => sum + (item.deger || 0), 0);
+                        const cardValue = kirilimAdi.toLowerCase().includes('bütçe') ? formatCurrency(toplamDeger) : formatNumber(toplamDeger);
+                        breakdownGridHTML += `<div class="breakdown-card"><h3>${kirilimAdi}</h3><div class="card-value">${cardValue}</div></div>`;
+                    });
+                    const annualTableHTML = createAnnualDataTable(hizmetAdi, mudurlukAdi);
+                    const mapHTML = ilceVerisiVarMi ? `<div class="map-wrapper" id="wrapper-${mapId}"><div class="map-container" id="${mapId}"></div></div>` : '';
+                    const descriptionHTML = serviceDescriptions.has(hizmetAdi) ? `<div class="hizmet-description">${serviceDescriptions.get(hizmetAdi)}</div>` : '';
+                    slideElement.innerHTML = `<div class="slide-content-wrapper"><div class="slide-header"><div class="slide-header-text"><h2 class="mudurluk-title">${mudurlukAdi}</h2><h1 class="hizmet-title">${hizmetAdi}</h1></div><button class="gemini-btn">✨ Veriyi Yorumla</button></div>${descriptionHTML}<div class="hizmet-main-content ${ilceVerisiVarMi ? 'grid-with-map' : 'no-map'}">${mapHTML}<div class="details-column"><div><h3 class="section-title">Genel Veriler</h3><div class="breakdown-grid">${breakdownGridHTML}</div></div>${annualTableHTML}</div></div></div>`;
+                    reportContent.appendChild(slideElement);
+                    presentationSlides.push({ element: slideElement, mudurlukId, mapId: ilceVerisiVarMi ? mapId : null, haritaTur: haritaIcinTur, mudurluk: mudurlukAdi, hizmet: hizmetAdi, kirilimlar: kirilimlar });
+                });
+            });
+            if(presentationSlides.length > 0) {
+                 presentationSlides[0].element.classList.add('active-slide');
+                 slideCounter.textContent = `1 / ${presentationSlides.length}`;
+                 const firstNavLink = navLinksContainer.querySelector(`[data-mudurluk-id="${presentationSlides[0].mudurlukId}"]`);
+                 if(firstNavLink) firstNavLink.classList.add('active-nav-link');
+                 const firstSlide = presentationSlides[0];
+                 if(firstSlide.mapId) { initializeMapForService(firstSlide.mapId, firstSlide.hizmet, firstSlide.haritaTur, firstSlide.mudurluk); }
+            }
+        }
+        function createAnnualDataTable(hizmetAdi, mudurlukAdi) {
+            const hizmetKumulatifData = kumulatifVeriler.filter(d => d.hizmet === hizmetAdi && d.mudurluk === mudurlukAdi);
+            if (hizmetKumulatifData.length === 0) return '';
+            const yillikVeri = {};
+            const yillikTurler = [...new Set(hizmetKumulatifData.map(d => d.tur))].sort();
+            hizmetKumulatifData.forEach(row => {
+                const year = excelDateToYear(row.sonTarih);
+                if (!year) return;
+                if (!yillikVeri[year]) yillikVeri[year] = { year: year };
+                yillikVeri[year][row.tur] = (yillikVeri[year][row.tur] || 0) + row.deger;
+            });
+            const tableData = Object.values(yillikVeri).sort((a, b) => a.year - b.year);
+            if (tableData.length === 0) return '';
+            let tableHTML = `<div><h3 class="section-title">Yıllık Veriler</h3><table class="annual-data-table"><thead><tr><th>Yıl</th>${yillikTurler.map(tur => `<th>${tur}</th>`).join('')}</tr></thead><tbody>${tableData.map(rowData => `<tr><td>${rowData.year}</td>${yillikTurler.map(tur => `<td>${(tur.toLowerCase().includes('bütçe') ? formatCurrency(rowData[tur]) : formatNumber(rowData[tur])) || '0'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+            return tableHTML;
+        }
+        function initializeMapForService(mapId, hizmetAdi, tur, mudurlukAdi) {
+            const mapContainer = document.getElementById(mapId);
+            if (!mapContainer || mapContainer._leaflet_id || !tur) return;
+            const map = L.map(mapId, { zoomControl: false, attributionControl: false, preferCanvas: true }).setView([41.08, 29.00], 9);
+            mapInstances[mapId] = map;
+            map.on('dblclick', () => toggleMapFullscreen(mapId));
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png').addTo(map);
+            const filteredData = bggVeriler.filter(item => item.mudurluk === mudurlukAdi && item.hizmet === hizmetAdi && item.tur === tur);
+            const ilceData = filteredData.filter(item => item.lokasyon && item.lokasyon.trim() !== "İstanbul Geneli" && item.lokasyon.trim() !== "Diğer");
+            const localMapData = {};
+            ilceData.forEach(item => { if (item.lokasyon) localMapData[item.lokasyon] = (localMapData[item.lokasyon] || 0) + item.deger; });
+            const values = Object.values(localMapData);
+            const localValueRange = { min: values.length ? Math.min(...values) : 0, max: values.length ? Math.max(...values) : 0 };
+            const dynamicStyle = (feature) => ({ fillColor: getColor(localMapData[getDistrictName(feature.properties)], localValueRange), weight: 1.5, opacity: 1, color: '#ffffff', fillOpacity: 0.85 });
+            const geojsonLayer = L.geoJson(istanbulGeoJSON, {
+                style: dynamicStyle,
+                onEachFeature: (feature, layer) => {
+                    layer.on({
+                        mouseover: (e) => { const districtName = getDistrictName(feature.properties); const value = localMapData[districtName]; const content = `<strong>${districtName}</strong><br>${tur}: ${formatNumber(value)}`; layer.bindTooltip(content, { sticky: true }).openTooltip(); e.target.setStyle({ weight: 2.5, color: '#343a40', fillOpacity: 1 }).bringToFront(); },
+                        mouseout: (e) => { geojsonLayer.resetStyle(e.target); layer.closeTooltip(); },
+                        click: (e) => map.fitBounds(e.target.getBounds())
+                    });
+                }
+            }).addTo(map);
+        }
+        const getColor = (value, range) => {
+            if (typeof value !== 'number') return '#dee2e6';
+            const { min, max } = range;
+            if (max <= min) return '#8ab5e1';
+            const ratio = (value - min) / (max - min);
+            if (ratio > 0.8) return '#3A6EA5'; if (ratio > 0.6) return '#5c86b8'; if (ratio > 0.4) return '#8ab5e1'; if (ratio > 0.2) return '#acc8e8'; return '#d0e0f3';
+        };
+
+        // --- AUTH & USER MANAGEMENT (Değişiklik yok) ---
+        function initializeUsers() { if (!localStorage.getItem('reportUsers')) { const users = [{ username: 'furkanaydin', password: '041295sD.', role: 'Admin' }]; localStorage.setItem('reportUsers', JSON.stringify(users)); } }
+        function handleLogin(event) {
+            event.preventDefault();
+            const username = event.target.username.value;
+            const password = event.target.password.value;
+            const users = JSON.parse(localStorage.getItem('reportUsers')) || [];
+            const user = users.find(u => u.username === username && u.password === password);
+            if (user) { sessionStorage.setItem('loggedInUser', JSON.stringify(user)); showAppForUser(user); }
+            else { loginError.textContent = 'Kullanıcı adı veya şifre hatalı.'; loginError.classList.remove('hidden'); }
+        }
+        function showAppForUser(user) {
+            loginSection.classList.add('hidden');
+            appContainer.classList.remove('hidden');
+            header.classList.add('hidden');
+            reportContent.classList.add('hidden');
+            entryPoint.classList.remove('hidden');
+            renderEntryPoint();
+            if (user.role === 'Admin') { renderAdminPanel(); }
+        }
+        function renderAdminPanel() {
+            const adminContainer = document.getElementById('admin-panel-container');
+            adminContainer.innerHTML = `<div class="entry-point-section" id="admin-panel"><h3>Kullanıcı Yönetimi</h3><form id="add-user-form"><input type="text" id="new-username" placeholder="Yeni Kullanıcı Adı" required><input type="password" id="new-password" placeholder="Şifre" required><select id="new-role"><option value="Kullanıcı">Kullanıcı</option><option value="Yönetici">Yönetici</option></select><button type="submit" class="action-btn">Kullanıcı Ekle</button></form><div id="user-list"></div></div>`;
+            renderUserList();
+            document.getElementById('add-user-form').addEventListener('submit', handleAddUser);
+        }
+        function renderUserList() {
+            const users = JSON.parse(localStorage.getItem('reportUsers')) || [];
+            const userListContainer = document.getElementById('user-list');
+            let tableHTML = '<table><tr><th>Kullanıcı Adı</th><th>Rol</th><th>İşlem</th></tr>';
+            users.forEach(user => { tableHTML += `<tr><td>${user.username}</td><td>${user.role}</td><td>${user.role !== 'Admin' ? `<button class="action-btn secondary" data-username="${user.username}">Sil</button>` : ''}</td></tr>`; });
+            tableHTML += '</table>';
+            userListContainer.innerHTML = tableHTML;
+            userListContainer.querySelectorAll('button').forEach(button => { button.addEventListener('click', handleDeleteUser); });
+        }
+        function handleAddUser(event) {
+            event.preventDefault();
+            const newUsername = document.getElementById('new-username').value;
+            const newPassword = document.getElementById('new-password').value;
+            const newRole = document.getElementById('new-role').value;
+            const users = JSON.parse(localStorage.getItem('reportUsers')) || [];
+            if (users.some(u => u.username === newUsername)) { alert('Bu kullanıcı adı zaten mevcut.'); return; }
+            users.push({ username: newUsername, password: newPassword, role: newRole });
+            localStorage.setItem('reportUsers', JSON.stringify(users));
+            renderUserList();
+            event.target.reset();
+        }
+        function handleDeleteUser(event) {
+            const usernameToDelete = event.target.dataset.username;
+            if (confirm(`'${usernameToDelete}' kullanıcısını silmek istediğinizden emin misiniz?`)) {
+                let users = JSON.parse(localStorage.getItem('reportUsers')) || [];
+                users = users.filter(u => u.username !== usernameToDelete);
+                localStorage.setItem('reportUsers', JSON.stringify(users));
+                renderUserList();
+            }
+        }
+        
+        // --- Sayfa Yükleme Olayları ---
+        window.addEventListener('DOMContentLoaded', () => {
+            initializeUsers();
+            const user = JSON.parse(sessionStorage.getItem('loggedInUser'));
+            if (user) { showAppForUser(user); }
+            else { loginSection.classList.remove('hidden'); appContainer.classList.add('hidden'); }
+        });
+        loginForm.addEventListener('submit', handleLogin);
+        document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') changeSlide(1); else if (e.key === 'ArrowLeft') changeSlide(-1); });
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+        async function handlePdfDownload() {
+            const pdfBtn = document.getElementById('download-report-btn');
+            const originalBtnText = pdfBtn.textContent;
+            pdfBtn.disabled = true;
+            pdfBtn.textContent = 'İndiriliyor...';
+            const { jsPDF } = window.jspdf;
+            const slidesToCapture = document.querySelectorAll('.presentation-slide');
+            if (slidesToCapture.length === 0) {
+                alert("PDF oluşturulacak slayt bulunamadı.");
+                pdfBtn.disabled = false;
+                pdfBtn.textContent = originalBtnText;
+                return;
+            }
+            const originalSlideIndex = currentSlideIndex;
+            try {
+                await document.documentElement.requestFullscreen();
+                await new Promise(resolve => setTimeout(resolve, 500)); 
+                const w = window.screen.width;
+                const h = window.screen.height;
+                const orientation = w > h ? 'l' : 'p';
+                const pdf = new jsPDF(orientation, 'px', [w, h]);
+                for (let i = 0; i < slidesToCapture.length; i++) {
+                    showSlide(i);
+                    await new Promise(resolve => setTimeout(resolve, 1000)); 
+                    try {
+                        const canvas = await html2canvas(document.body, { scale: 2, useCORS: true, width: w, height: h, windowWidth: w, windowHeight: h, x: 0, y: 0 });
+                        const imgData = canvas.toDataURL('image/jpeg', 0.9);
+                        if (i > 0) { pdf.addPage([w, h], orientation); }
+                        pdf.addImage(imgData, 'JPEG', 0, 0, w, h);
+                    } catch (error) { console.error(`Slayt ${i+1} işlenirken hata oluştu:`, error); }
+                }
+                pdf.save('rapor.pdf');
+            } catch(err) {
+                 alert('Tam ekran moduna geçilemedi veya bir hata oluştu.');
+                 console.error(err);
+            } finally {
+                if (document.fullscreenElement) { await document.exitFullscreen(); }
+                showSlide(originalSlideIndex); 
+                pdfBtn.disabled = false;
+                pdfBtn.textContent = originalBtnText;
+            }
+        }
+        
+        reportContent.addEventListener('click', function(e) { const geminiButton = e.target.closest('.gemini-btn'); if (geminiButton) handleGeminiRequest(); });
+        geminiCloseBtn.addEventListener('click', () => geminiModalOverlay.classList.add('hidden'));
+        geminiModalOverlay.addEventListener('click', (e) => { if (e.target === geminiModalOverlay) geminiModalOverlay.classList.add('hidden'); });
+
+    </script>
+</body>
+</html>
