@@ -347,13 +347,29 @@
             setTimeout(() => { map.invalidateSize(); }, 150);
         }
 
-        // --- Gemini API Fonksiyonları (Değişiklik yok) ---
+        // --- Gemini API Fonksiyonları ---
         async function handleGeminiRequest() {
             const button = document.querySelector('.active-slide .gemini-btn');
             if(!button) return;
+
+            // API anahtarını tarayıcı hafızasından al
+            const apiKey = localStorage.getItem('geminiApiKey');
+            
+            // Anahtar yoksa uyarı göster ve işlemi durdur
+            if (!apiKey) {
+                geminiModalOverlay.classList.remove('hidden');
+                geminiModalContent.innerHTML = `
+                    <div class="error-message" style="background-color: #fff3cd; border-color: #ffeeba; color: #856404;">
+                        <h3>API Anahtarı Eksik</h3>
+                        <p>Bu özelliğin çalışması için bir Google Gemini API anahtarı gereklidir. Lütfen Admin rolündeki bir kullanıcıdan, giriş sayfasındaki "Yönetim Paneli" üzerinden API anahtarını girmesini isteyin.</p>
+                    </div>`;
+                return;
+            }
+
             button.disabled = true;
             geminiModalOverlay.classList.remove('hidden');
             geminiModalContent.innerHTML = '<div class="loading-spinner"></div>';
+            
             try {
                 const slideData = presentationSlides[currentSlideIndex];
                 const bggHizmetData = bggVeriler.filter(v => v.mudurluk === slideData.mudurluk && v.hizmet === slideData.hizmet);
@@ -401,17 +417,34 @@ ${kirilimlarStr}
 ${yillikVeriStr || 'Yıllık veri bulunmuyor.'}
 - **Yoğun İlçeler:**
 ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
+                
                 let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
                 const payload = { contents: chatHistory };
-                const apiKey = "AIzaSyDAJjUwXA_Wab2Yj266k__A-PoSio0klXg";
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
                 if(!response.ok) throw new Error(`API Hatası: ${response.statusText}`);
+
                 const result = await response.json();
-                if (result.candidates && result.candidates.length > 0) { const text = result.candidates[0].content.parts[0].text; geminiModalContent.innerHTML = text.replace(/\n/g, '<br>'); }
-                else { throw new Error("API'den geçerli bir yanıt alınamadı."); }
-            } catch (error) { console.error("Gemini API isteği başarısız oldu:", error); geminiModalContent.innerText = `Bir hata oluştu: ${error.message}`;
-            } finally { button.disabled = false; }
+
+                if (result.candidates && result.candidates.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    geminiModalContent.innerHTML = text.replace(/\n/g, '<br>');
+                } else {
+                    throw new Error("API'den geçerli bir yanıt alınamadı. Anahtarınızın geçerliliğini ve yetkilerini kontrol edin.");
+                }
+
+            } catch (error) {
+                console.error("Gemini API isteği başarısız oldu:", error);
+                geminiModalContent.innerText = `Bir hata oluştu: ${error.message}`;
+            } finally {
+                button.disabled = false;
+            }
         }
         
         // --- Veri Yükleme ve İşleme ---
@@ -428,7 +461,6 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
                 skipEmptyLines: true,
                 complete: (results) => {
                     console.log("Veriler başarıyla çekildi.");
-                    // Hata kontrolü: PapaParse bazen boş veri veya hata nesnesi dönebilir
                     if (results.errors.length > 0) {
                         handleError("CSV dosyası okunurken bir hata oluştu.", results.errors.map(e => e.message).join(', '));
                         return;
@@ -443,10 +475,9 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
         
         function processAndRenderReport(jsonData, onComplete) {
             try {
-                // Global değişkenleri ve rapor içeriğini temizle
                 Object.values(mapInstances).forEach(map => map.remove());
                 mapInstances = {};
-                reportContent.innerHTML = ''; // Hata durumunda spinner'ı temizlemek için burada
+                reportContent.innerHTML = ''; 
                 presentationSlides = [];
                 currentSlideIndex = 0;
                 serviceDescriptions.clear();
@@ -455,7 +486,6 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
                     throw new Error("Google Sheets'ten veri okunamadı veya dosya boş.");
                 }
                 
-                // Sütun başlıklarının Excel'deki ile tam olarak eşleştiğinden emin olun.
                 const cleanedData = jsonData.map(row => ({
                     mudurluk: row['Müdürlük'] && typeof row['Müdürlük'] === 'string' ? row['Müdürlük'].trim() : null,
                     hizmet: row['Hizmet Başlığı'] && typeof row['Hizmet Başlığı'] === 'string' ? row['Hizmet Başlığı'].trim() : null,
@@ -481,7 +511,6 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
                     throw new Error('Dosyada "Veri Aralığı" sütununda "BGG" olan geçerli veri bulunamadı. Lütfen sütun başlıklarını ve içeriğini kontrol edin.');
                 }
 
-                // GeoJSON verisini çek ve başarılı olursa raporu oluştur
                 fetch('https://raw.githubusercontent.com/sahircansurmeli/istanbul-geojson/master/ilce_geojson.json')
                     .then(response => {
                         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -633,7 +662,7 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
             if (ratio > 0.8) return '#3A6EA5'; if (ratio > 0.6) return '#5c86b8'; if (ratio > 0.4) return '#8ab5e1'; if (ratio > 0.2) return '#acc8e8'; return '#d0e0f3';
         };
 
-        // --- AUTH & USER MANAGEMENT (Değişiklik yok) ---
+        // --- AUTH & USER MANAGEMENT ---
         function initializeUsers() { if (!localStorage.getItem('reportUsers')) { const users = [{ username: 'furkanaydin', password: '041295sD.', role: 'Admin' }]; localStorage.setItem('reportUsers', JSON.stringify(users)); } }
         function handleLogin(event) {
             event.preventDefault();
@@ -655,16 +684,57 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
         }
         function renderAdminPanel() {
             const adminContainer = document.getElementById('admin-panel-container');
-            adminContainer.innerHTML = `<div class="entry-point-section" id="admin-panel"><h3>Kullanıcı Yönetimi</h3><form id="add-user-form"><input type="text" id="new-username" placeholder="Yeni Kullanıcı Adı" required><input type="password" id="new-password" placeholder="Şifre" required><select id="new-role"><option value="Kullanıcı">Kullanıcı</option><option value="Yönetici">Yönetici</option></select><button type="submit" class="action-btn">Kullanıcı Ekle</button></form><div id="user-list"></div></div>`;
+            adminContainer.innerHTML = `
+                <div class="entry-point-section" id="admin-panel">
+                    <h3>Kullanıcı Yönetimi</h3>
+                    <form id="add-user-form">
+                        <input type="text" id="new-username" placeholder="Yeni Kullanıcı Adı" required>
+                        <input type="password" id="new-password" placeholder="Şifre" required>
+                        <select id="new-role">
+                            <option value="Kullanıcı">Kullanıcı</option>
+                            <option value="Yönetici">Yönetici</option>
+                        </select>
+                        <button type="submit" class="action-btn">Kullanıcı Ekle</button>
+                    </form>
+                    <div id="user-list" style="margin-bottom: 2rem;"></div>
+
+                    <h3>API Anahtar Yönetimi</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">Gemini "Veriyi Yorumla" özelliğinin çalışması için bir API anahtarı gereklidir.</p>
+                    <form id="api-key-form" style="display: flex; gap: 1rem; align-items: center;">
+                        <input type="password" id="api-key-input" placeholder="Google AI Studio API Anahtarını Girin" required style="flex-grow: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        <button type="submit" class="action-btn">Kaydet</button>
+                    </form>
+                </div>`;
+            
             renderUserList();
             document.getElementById('add-user-form').addEventListener('submit', handleAddUser);
+            
+            // API Anahtarını yönet
+            const apiKeyInput = document.getElementById('api-key-input');
+            const storedKey = localStorage.getItem('geminiApiKey');
+            if (storedKey) {
+                apiKeyInput.value = storedKey;
+            }
+            document.getElementById('api-key-form').addEventListener('submit', handleSaveApiKey);
         }
+        
+        function handleSaveApiKey(event) {
+            event.preventDefault();
+            const newKey = document.getElementById('api-key-input').value;
+            if (newKey && newKey.trim() !== '') {
+                localStorage.setItem('geminiApiKey', newKey.trim());
+                alert('API Anahtarı başarıyla kaydedildi.');
+            } else {
+                alert('Lütfen geçerli bir API anahtarı girin.');
+            }
+        }
+
         function renderUserList() {
             const users = JSON.parse(localStorage.getItem('reportUsers')) || [];
             const userListContainer = document.getElementById('user-list');
-            let tableHTML = '<table><tr><th>Kullanıcı Adı</th><th>Rol</th><th>İşlem</th></tr>';
-            users.forEach(user => { tableHTML += `<tr><td>${user.username}</td><td>${user.role}</td><td>${user.role !== 'Admin' ? `<button class="action-btn secondary" data-username="${user.username}">Sil</button>` : ''}</td></tr>`; });
-            tableHTML += '</table>';
+            let tableHTML = '<table><thead><tr><th>Kullanıcı Adı</th><th>Rol</th><th>İşlem</th></tr></thead><tbody>';
+            users.forEach(user => { tableHTML += `<tr><td>${user.username}</td><td>${user.role}</td><td>${user.role !== 'Admin' ? `<button class="action-btn secondary" data-username="${user.username}" style="padding: 5px 10px; font-size: 0.8rem;">Sil</button>` : ''}</td></tr>`; });
+            tableHTML += '</tbody></table>';
             userListContainer.innerHTML = tableHTML;
             userListContainer.querySelectorAll('button').forEach(button => { button.addEventListener('click', handleDeleteUser); });
         }
