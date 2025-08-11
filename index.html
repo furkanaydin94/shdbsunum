@@ -286,23 +286,24 @@
     
     <script>
         // --- URL SABİTLERİ ---
-        var googleSheetCsvURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRx4lC9-h5PdEf0MZLLnK_H-1r34JGiw7fTXQkoajPLDqmARnpC3a2qBbsXoDhJeQ/pub?output=csv';
-        var googleSheetEditURL = 'https://docs.google.com/spreadsheets/d/1nJGW7svaU2JzYmW9m3r8gWR8yIqr4rwN/edit?usp=sharing&ouid=114356643503574570305&rtpof=true&sd=true';
+        const googleSheetDataURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRx4lC9-h5PdEf0MZLLnK_H-1r34JGiw7fTXQkoajPLDqmARnpC3a2qBbsXoDhJeQ/pub?gid=1747576875&single=true&output=csv';
+        const googleSheetDescriptionsURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRx4lC9-h5PdEf0MZLLnK_H-1r34JGiw7fTXQkoajPLDqmARnpC3a2qBbsXoDhJeQ/pub?gid=1436691891&single=true&output=csv';
+        const googleSheetEditURL = 'https://docs.google.com/spreadsheets/d/1nJGW7svaU2JzYmW9m3r8gWR8yIqr4rwN/edit?usp=sharing&ouid=114356643503574570305&rtpof=true&sd=true';
 
         // --- KULLANICI VERİLERİ ---
-        var reportUsers = [
+        const reportUsers = [
             { username: 'furkanaydin', password: '041295sD.', role: 'Admin' },
             { username: 'yönetici', password: 'shdb2025', role: 'Yönetici' },
             { username: 'kullanıcı', password: 'shdb2022', role: 'Kullanıcı' }
         ];
 
         // --- Global Değişkenler ---
-        var bggVeriler = [], kumulatifVeriler = [];
-        var serviceDescriptions = new Map();
-        var istanbulGeoJSON;
-        var mapInstances = {};
-        var presentationSlides = [], currentSlideIndex = 0, isTransitioning = false;
-        var generalChatHistory = [];
+        let bggVeriler = [], kumulatifVeriler = [];
+        let serviceDescriptions = new Map();
+        let istanbulGeoJSON;
+        let mapInstances = {};
+        let presentationSlides = [], currentSlideIndex = 0, isTransitioning = false;
+        let generalChatHistory = [];
 
         // --- DOM Elementleri ---
         const reportContent = document.getElementById('report-content');
@@ -457,44 +458,74 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
             appContainer.classList.add('hidden');
             reportContent.innerHTML = '<div class="loading-spinner"></div>';
             reportContent.classList.remove('hidden');
-            Papa.parse(googleSheetCsvURL, {
-                download: true, header: true, dynamicTyping: true, skipEmptyLines: true,
-                complete: (results) => {
-                    if (results.errors.length > 0) { handleError("CSV dosyası okunurken hata oluştu.", results.errors.map(e => e.message).join(', ')); return; }
-                    processAndRenderReport(results.data, onComplete);
-                },
-                error: (err) => { handleError("Google Sheets verisi çekilirken bir ağ veya CORS hatası oluştu.", err.message); }
+
+            const fetchData = (url, sheetName) => {
+                return new Promise((resolve, reject) => {
+                    if (!url || url.includes('YOUR_GID_HERE')) {
+                        return reject(new Error(`${sheetName} sayfası için geçerli bir Google Sheets yayınlama linki girilmemiş.`));
+                    }
+                    Papa.parse(url, {
+                        download: true, header: true, dynamicTyping: true, skipEmptyLines: true,
+                        complete: resolve,
+                        error: reject
+                    });
+                });
+            };
+
+            Promise.all([
+                fetchData(googleSheetDataURL, 'Ana Veri'),
+                fetchData(googleSheetDescriptionsURL, 'Açıklamalar')
+            ]).then(([mainResults, descResults]) => {
+                if (mainResults.errors && mainResults.errors.length > 0) { throw mainResults.errors; }
+                if (descResults.errors && descResults.errors.length > 0) { throw descResults.errors; }
+                
+                processAndRenderReport(mainResults.data, descResults.data, onComplete);
+
+            }).catch(err => {
+                handleError("Google Sheets verisi çekilirken bir hata oluştu.", err.message || JSON.stringify(err));
             });
         }
         
-        function processAndRenderReport(jsonData, onComplete) {
+        function processAndRenderReport(mainJsonData, descriptionsJsonData, onComplete) {
             try {
                 Object.values(mapInstances).forEach(map => map.remove());
                 mapInstances = {};
                 reportContent.innerHTML = ''; 
                 presentationSlides = [];
                 currentSlideIndex = 0;
+                
                 serviceDescriptions.clear();
-                if (!jsonData || jsonData.length === 0) { throw new Error("Google Sheets'ten veri okunamadı veya dosya boş."); }
-                const cleanedData = jsonData.map(row => ({
+                if (descriptionsJsonData) {
+                    descriptionsJsonData.forEach(row => {
+                         const hizmet = row['Hizmet Başlığı']?.trim();
+                         const aciklama = row['Açıklama']?.trim();
+                         if (hizmet && aciklama) {
+                             serviceDescriptions.set(hizmet, aciklama);
+                         }
+                    });
+                }
+
+                if (!mainJsonData || mainJsonData.length === 0) { throw new Error("Ana veri sayfasından veri okunamadı veya sayfa boş."); }
+                
+                const cleanedData = mainJsonData.map(row => ({
                     mudurluk: row['Müdürlük']?.trim() || null, hizmet: row['Hizmet Başlığı']?.trim() || null,
                     tur: row['Tür']?.trim() || null, lokasyon: row['Lokasyon']?.trim() || null,
                     veriAraligi: row['Veri Aralığı']?.toString().trim() || null, deger: parseFloat(row['Değer']) || 0,
                     sonTarih: row['Son Tarih'],
                 })).filter(row => row.mudurluk && row.hizmet && row.veriAraligi);
+
                 bggVeriler = cleanedData.filter(row => row.veriAraligi?.toLocaleUpperCase('tr-TR') === 'BGG');
                 kumulatifVeriler = cleanedData.filter(row => row.veriAraligi?.toLocaleUpperCase('tr-TR') === 'KÜMÜLATİF');
-                jsonData.forEach(row => {
-                     const hizmet = row['Hizmet Başlığı']?.trim();
-                     const aciklama = row['Açıklama']?.trim();
-                     if (hizmet && aciklama && !serviceDescriptions.has(hizmet)) { serviceDescriptions.set(hizmet, aciklama); }
-                });
+
                 if (bggVeriler.length === 0) { throw new Error('Dosyada "Veri Aralığı" sütununda "BGG" olan geçerli veri bulunamadı.'); }
+                
                 fetch('https://raw.githubusercontent.com/sahircansurmeli/istanbul-geojson/master/ilce_geojson.json')
                     .then(response => { if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`); return response.json(); })
                     .then(geojsonData => { istanbulGeoJSON = geojsonData; renderFullReport(); if (onComplete) onComplete(); })
                     .catch(err => { handleError("Harita verisi (GeoJSON) yüklenirken bir hata oluştu.", err.message); });
-            } catch (err) { handleError("Veriler işlenirken bir hata oluştu.", err.message); }
+            } catch (err) {
+                handleError("Veriler işlenirken bir hata oluştu.", err.message);
+            }
         }
 
         // --- Başlangıç ve Kullanıcı Yönetimi ---
