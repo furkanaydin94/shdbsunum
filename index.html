@@ -579,7 +579,10 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
                         const cardValue = kirilimAdi.toLowerCase().includes('bütçe') ? formatCurrency(toplamDeger) : formatNumber(toplamDeger);
                         breakdownGridHTML += `<div class="breakdown-card"><h3>${kirilimAdi}</h3><div class="card-value">${cardValue}</div></div>`;
                     });
-                    const annualTableHTML = createAnnualDataTable(hizmetAdi, mudurlukAdi);
+                    
+                    // DEĞİŞİKLİK: Yıllık veri tablosu oluşturulurken `kirilimlar` dizisi gönderiliyor.
+                    const annualTableHTML = createAnnualDataTable(hizmetAdi, mudurlukAdi, kirilimlar);
+                    
                     const mapHTML = ilceVerisiVarMi ? `<div class="map-wrapper" id="wrapper-${mapId}"><div class="map-container" id="${mapId}"></div></div>` : '';
                     const descriptionHTML = serviceDescriptions.has(hizmetAdi) ? `<div class="hizmet-description">${serviceDescriptions.get(hizmetAdi)}</div>` : '';
                     const geminiButtonHTML = isAdminOrManager && isApiKeyValidated ? `<button class="gemini-btn">✨ Veriyi Yorumla</button>` : '';
@@ -598,11 +601,18 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
                  if(firstSlide.mapId) { initializeMapForService(firstSlide.mapId, firstSlide.hizmet, firstSlide.haritaTur, firstSlide.mudurluk); }
             }
         }
-        function createAnnualDataTable(hizmetAdi, mudurlukAdi) {
+        
+        // DEĞİŞİKLİK: Fonksiyon artık sütun sırasını belirlemek için `genelVeriSiralama` parametresini alıyor.
+        function createAnnualDataTable(hizmetAdi, mudurlukAdi, genelVeriSiralama) {
             const hizmetKumulatifData = kumulatifVeriler.filter(d => d.hizmet === hizmetAdi && d.mudurluk === mudurlukAdi);
             if (hizmetKumulatifData.length === 0) return '';
+            
+            // Yıllık verilerde mevcut olan tüm türleri al.
+            const mevcutYillikTurler = [...new Set(hizmetKumulatifData.map(d => d.tur))];
+            // Genel veri sırasını, sadece yıllık verilerde de mevcut olan türleri içerecek şekilde filtrele.
+            const yillikTurler = genelVeriSiralama.filter(tur => mevcutYillikTurler.includes(tur));
+
             const yillikVeri = {};
-            const yillikTurler = [...new Set(hizmetKumulatifData.map(d => d.tur))].sort();
             hizmetKumulatifData.forEach(row => {
                 const year = excelDateToYear(row.sonTarih);
                 if (!year) return;
@@ -614,6 +624,7 @@ ${enYogunIlcelerStr || 'İlçe verisi bulunmuyor.'}`;
             let tableHTML = `<div><h3 class="section-title">Yıllık Veriler</h3><table class="annual-data-table"><thead><tr><th>Yıl</th>${yillikTurler.map(tur => `<th>${tur}</th>`).join('')}</tr></thead><tbody>${tableData.map(rowData => `<tr><td>${rowData.year}</td>${yillikTurler.map(tur => `<td>${(tur.toLowerCase().includes('bütçe') ? formatCurrency(rowData[tur]) : formatNumber(rowData[tur])) || '0'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
             return tableHTML;
         }
+
         function initializeMapForService(mapId, hizmetAdi, tur, mudurlukAdi) {
             const mapContainer = document.getElementById(mapId);
             if (!mapContainer || mapContainer._leaflet_id || !tur) return;
