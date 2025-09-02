@@ -988,7 +988,8 @@
                 if (!jsd) return false;
                 const y = jsd.getFullYear();
                 const m = jsd.getMonth();
-                return (y < targetYear) || (y === targetYear && m <= targetMonthIndex);
+                // Değişiklik: Önceki yılların tüm verilerini ve seçilen yılın sadece seçilen ayına ait veriyi al.
+                return (y < targetYear) || (y === targetYear && m === targetMonthIndex);
             };
 
             // Seçim + ay filtresi
@@ -2256,3 +2257,4 @@
     </script>
 </body>
 </html>
+
