@@ -336,10 +336,14 @@
             <nav class="horizontal-nav">
                 <ul id="mudurluk-links"></ul>
             </nav>
-            <div class="presentation-controls">
+            <div class="presentation-controls hidden">
                 <button id="fullscreen-btn" title="Tam Ekran">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/></svg>
                 </button>
+            </div>
+             <div id="user-info" class="hidden" style="display: flex; align-items: center; gap: 1rem; color: white;">
+                <span id="username-display" style="font-weight: 500;"></span>
+                <button id="logout-btn" class="action-btn secondary" style="padding: 6px 12px; font-size: 0.9rem; color: white; border-color: rgba(255,255,255,0.5); background: none;">Çıkış Yap</button>
             </div>
         </div>
     </header>
@@ -381,7 +385,23 @@
         const reportUsers = [
             { username: 'furkanaydin', password: '041295sD.', role: 'Admin' },
             { username: 'yönetici', password: 'shdb2025', role: 'Yönetici' },
-            { username: 'kullanıcı', password: 'shdb2022', role: 'Kullanıcı' }
+            { username: 'kullanıcı', password: 'shdb2022', role: 'Kullanıcı' },
+            { username: 'verisorumlusu', password: 'shdb2025', role: 'Veri Sorumlusu' }
+        ];
+        
+        const mudurlukMap = {
+            'KAHM': 'Kadın ve Aile Hizmetleri Şube Müdürlüğü',
+            'SHM': 'Sosyal Hizmetler Şube Müdürlüğü',
+            'ÇHM': 'Çocuk Hizmetleri Şube Müdürlüğü',
+            'EHM': 'Engelli Hizmetleri Şube Müdürlüğü',
+            'EŞM': 'Engelli Hizmetleri Şube Müdürlüğü',
+            'ŞYVGİM': 'Şehit Yakınları ve Gazilerle İlişkiler Şube Müdürlüğü'
+        };
+
+        const standardHeaders = [
+            'Müdürlük', 'Hizmet Başlığı', 'Tür', 'Lokasyon', 'Veri Aralığı', 
+            'İlk Tarih', 'Son Tarih', 'Veri Sorumlusu', 'Güncel Olması Gereken Tarih', 
+            'Eksik Giriş', 'Değer', 'Veri Giriş Tarihi'
         ];
 
         // --- Global Değişkenler ---
@@ -422,6 +442,18 @@
             const date = new Date(dateInput);
             if (date instanceof Date && !isNaN(date)) { return date.getFullYear(); }
             return null;
+        };
+
+        const toJsDate = (dateInput) => {
+            if (!dateInput) return null;
+            // For Excel serial numbers
+            if (typeof dateInput === 'number' && dateInput > 25569) {
+                const date = new Date(Math.round((dateInput - 25569) * 86400 * 1000));
+                return (date instanceof Date && !isNaN(date)) ? date : null;
+            }
+            // For date strings
+            const date = new Date(dateInput);
+            return (date instanceof Date && !isNaN(date)) ? date : null;
         };
 
         const handleError = (message, details = '') => {
@@ -465,37 +497,98 @@
         }
 
         // --- Veri Yükleme ve İşleme ---
-        function handleFileProcessing(action) {
-            const excelFile = document.getElementById('excel-file-input').files[0];
-
-            if (!excelFile) {
-                alert("Lütfen bir Excel dosyası seçin.");
+        async function handleFileProcessing(action) {
+            const excelFiles = document.getElementById('excel-file-input').files;
+            if (!excelFiles || excelFiles.length === 0) {
+                alert("Lütfen bir veya daha fazla Excel dosyası seçin.");
                 return;
             }
-            
+
             if (action === 'check') {
                 appContainer.classList.add('hidden');
                 dataCheckerContainer.classList.remove('hidden');
                 dataCheckerContainer.innerHTML = '<div class="loading-spinner"></div>';
+                try {
+                    let combinedData = [];
+                    for (const file of excelFiles) {
+                        const data = await file.arrayBuffer();
+                        const workbook = XLSX.read(new Uint8Array(data), { type: 'array', cellDates: true });
+                        for (const sheetName of workbook.SheetNames) {
+                            const sheet = workbook.Sheets[sheetName];
+                             // Convert to array of arrays to enforce column order
+                            const sheetAoA = XLSX.utils.sheet_to_json(sheet, { defval: null, header: 1 });
+                            
+                            if (sheetAoA.length < 2) continue; // Skip empty or header-only sheets
+
+                            const headerRow = sheetAoA[0];
+                            const dataRows = sheetAoA.slice(1);
+
+                            const sheetJson = dataRows.map(rowArray => {
+                                const row = {};
+                                // Map data based on standard 12-column order
+                                standardHeaders.forEach((header, index) => {
+                                    row[header] = rowArray[index] !== null ? rowArray[index] : undefined;
+                                });
+                                
+                                row['__sourceFile'] = file.name;
+                                row['__sourceSheet'] = sheetName;
+                                
+                                // Müdürlük kısaltmalarını genişlet
+                                if (row['Müdürlük']) {
+                                    const rawMudurluk = row['Müdürlük'].toString().trim();
+                                    row['Müdürlük'] = mudurlukMap[rawMudurluk] || rawMudurluk;
+                                }
+                                return row;
+                            });
+                            combinedData.push(...sheetJson);
+                        }
+                    }
+                    
+                    const today = new Date(); 
+                    const firstDayOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                    const requiredDate = new Date(firstDayOfCurrentMonth - 1); // Önceki ayın son günü
+
+                    // Gelecek tarihli verileri ve boş satırları filtrele
+                    let processedData = combinedData.filter(row => {
+                         const hasMeaningfulData = row['Müdürlük'] || row['Hizmet Başlığı'];
+                         if (!hasMeaningfulData) {
+                             return false;
+                         }
+                         const sonTarih = toJsDate(row['Son Tarih']);
+                         return !sonTarih || sonTarih <= requiredDate;
+                    });
+
+
+                    processedData.forEach(row => {
+                        row['Güncel Olması Gereken Tarih'] = requiredDate;
+                        const deger = row['Değer'];
+                        let eksikGiris = "";
+                        // Değer null veya undefined ise eksik giriş kabul et (0 geçerli)
+                        if (deger === null || deger === undefined) {
+                            eksikGiris = "Veri Girişi Sağlanmalı";
+                        }
+                        row['Eksik Giriş'] = eksikGiris;
+                    });
+
+                    rawDataForChecker = processedData;
+                    renderDataChecker();
+                } catch (err) {
+                    handleError("Dosyalar işlenirken bir hata oluştu.", err.message);
+                }
             } else { // 'view' action
+                if (excelFiles.length > 1) {
+                    alert("Rapor Görüntüleyici modu için lütfen tek bir dosya seçin.");
+                    renderFileUploader('view'); // Arayüzü sıfırla
+                    return;
+                }
+                const excelFile = excelFiles[0];
                 appContainer.classList.remove('hidden');
                 entryPoint.innerHTML = '<div class="loading-spinner"></div>';
-            }
-
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, {type: 'array'});
-
-                    if (action === 'check') {
-                        const mainSheetName = workbook.SheetNames[0]; // İlk sayfayı ham veri olarak kabul et
-                        const mainSheet = workbook.Sheets[mainSheetName];
-                        if (!mainSheet) throw new Error(`Excel dosyasında okunacak bir sayfa bulunamadı.`);
-                        rawDataForChecker = XLSX.utils.sheet_to_json(mainSheet, { defval: "" });
-                        renderDataChecker();
-                    } else { // 'view' action
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, {type: 'array'});
                         const mainSheetName = "Hizmetler";
                         const descSheetName = "Açıklamalar";
                         const mainSheet = workbook.Sheets[mainSheetName];
@@ -525,15 +618,15 @@
                         })).filter(row => row.mudurluk && row.hizmet && row.veriAraligi);
 
                         renderReportWizard(cleanedDataGlobal);
+                    } catch (err) {
+                        handleError("Excel dosyası okunurken veya işlenirken bir hata oluştu.", err.message);
                     }
-                } catch (err) {
-                    handleError("Excel dosyası okunurken veya işlenirken bir hata oluştu.", err.message);
-                }
-            };
-            reader.onerror = function(error) {
-                handleError("Dosya okunurken bir hata oluştu.", error);
-            };
-            reader.readAsArrayBuffer(excelFile);
+                };
+                reader.onerror = function(error) {
+                    handleError("Dosya okunurken bir hata oluştu.", error);
+                };
+                reader.readAsArrayBuffer(excelFile);
+            }
         }
         
         function processAndRenderReport(selections) {
@@ -574,11 +667,10 @@
         }
 
         // --- Başlangıç ve Kullanıcı Yönetimi ---
-        function renderEntryPoint() {
-            entryPoint.innerHTML = `
-                <h2>İşlem Seçin</h2>
-                <p>Ham veriyi kontrol etmek veya hazır rapor dosyasını yükleyerek sunumu görüntülemek için bir işlem seçin.</p>
-                
+        function renderEntryPoint(user) {
+            const isDataSorumlusu = user && user.role === 'Veri Sorumlusu';
+
+            const howToUseHTML = isDataSorumlusu ? '' : `
                 <div style="background: rgba(58,110,165,0.1); border-left: 4px solid var(--primary-accent); padding: 1rem; margin: 1.5rem 0; border-radius: 0 8px 8px 0;">
                     <h3 style="margin: 0 0 0.5rem 0; color: var(--primary-accent); cursor: pointer; font-size: 1rem;" onclick="toggleInstructions('entry-howto')">Nasıl Kullanılır? <span id="entry-howto-toggle" style="font-size: 0.8rem;">▶</span></h3>
                     <div id="entry-howto" style="display: none;">
@@ -589,25 +681,37 @@
                         </ul>
                     </div>
                 </div>
+            `;
 
+             const buttonsHTML = `
                 <div class="button-group">
-                    <button id="check-data-btn" class="action-btn secondary">Veri Kontrol Aracı</button>
+                    <button id="check-data-btn" class="action-btn ${isDataSorumlusu ? 'primary' : 'secondary'}">Veri Kontrol Aracı</button>
+                    ${!isDataSorumlusu ? `
                     <button id="view-report-btn" class="action-btn">Rapor Görüntüleyici</button>
                     <button id="prepare-report-btn" class="action-btn">Rapor Dosyası Hazırlama</button>
+                    ` : ''}
                 </div>
-
-                
             `;
+
+            entryPoint.innerHTML = `
+                <h2>İşlem Seçin</h2>
+                <p>Ham veriyi kontrol etmek veya hazır rapor dosyasını yükleyerek sunumu görüntülemek için bir işlem seçin.</p>
+                ${howToUseHTML}
+                ${buttonsHTML}
+            `;
+
             document.getElementById('check-data-btn').addEventListener('click', () => renderFileUploader('check'));
-            document.getElementById('view-report-btn').addEventListener('click', () => renderFileUploader('view'));
-            document.getElementById('prepare-report-btn').addEventListener('click', () => renderPrepareUploader());
+            if (!isDataSorumlusu) {
+                document.getElementById('view-report-btn').addEventListener('click', () => renderFileUploader('view'));
+                document.getElementById('prepare-report-btn').addEventListener('click', () => renderPrepareUploader());
+            }
         }
         
         function renderFileUploader(mode) {
             const title = mode === 'check' ? 'Ham Veri Dosyasını Yükle' : 'Hazır Rapor Dosyasını Yükle';
             const actionText = mode === 'check' ? 'Veriyi Kontrol Et' : 'Rapora İlerle';
              const description = mode === 'check' 
-                ? 'Lütfen kontrol etmek istediğiniz ham veriyi içeren Excel dosyasını seçin.'
+                ? 'Lütfen kontrol etmek istediğiniz ham veriyi içeren Excel dosyasını veya dosyalarını seçin. Birden çok dosya seçildiğinde tüm sayfalardaki veriler birleştirilecektir.'
                 : 'Lütfen raporu oluşturmak için gerekli "Hizmetler" ve "Açıklamalar" sayfalarını içeren Excel dosyasını seçin.';
             
             const instructions = mode === 'check' 
@@ -633,8 +737,8 @@
                 ${instructions}
                 
                 <div class="form-group" style="margin-top: 2rem;">
-                    <label for="excel-file-input">Excel Dosyası (.xlsx)</label>
-                    <input type="file" id="excel-file-input" accept=".xlsx, .xls" required style="padding: 10px; border: 1px solid var(--border-color); width: 100%; border-radius: 8px;">
+                    <label for="excel-file-input">Excel Dosyası / Dosyaları (.xlsx)</label>
+                    <input type="file" id="excel-file-input" accept=".xlsx, .xls" required ${mode === 'check' ? 'multiple' : ''} style="padding: 10px; border: 1px solid var(--border-color); width: 100%; border-radius: 8px;">
                 </div>
                 
                 <div class="button-group">
@@ -654,7 +758,10 @@
                 </div>` : ''}
             `;
             document.getElementById('process-file-btn').addEventListener('click', () => handleFileProcessing(mode));
-            document.getElementById('back-to-main-btn').addEventListener('click', renderEntryPoint);
+            document.getElementById('back-to-main-btn').addEventListener('click', () => {
+                 const user = JSON.parse(sessionStorage.getItem('loggedInUser'));
+                 renderEntryPoint(user);
+            });
             if (mode === 'check') {
                 document.getElementById(`download-sample-${mode}`).addEventListener('click', () => downloadSampleFile('raw'));
             }
@@ -712,7 +819,10 @@
                 
                 <div id="prep-pivot-container" style="margin-top:1rem;"></div>
             `;
-            document.getElementById('back-to-main-btn').addEventListener('click', renderEntryPoint);
+            document.getElementById('back-to-main-btn').addEventListener('click', () => {
+                const user = JSON.parse(sessionStorage.getItem('loggedInUser'));
+                renderEntryPoint(user);
+            });
             document.getElementById('prep-process').addEventListener('click', handlePrepareLoad);
             document.getElementById('download-sample-raw-prep').addEventListener('click', () => downloadSampleFile('raw'));
             document.getElementById('download-sample-template-prep').addEventListener('click', () => downloadSampleFile('template'));
@@ -729,7 +839,14 @@
                     const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
                     const mainSheetName = wb.SheetNames[0];
                     const mainSheet = wb.Sheets[mainSheetName];
-                    firstExcelRaw = XLSX.utils.sheet_to_json(mainSheet, { defval: '' });
+                    const sheetJson = XLSX.utils.sheet_to_json(mainSheet, { defval: null });
+                    sheetJson.forEach(row => {
+                        if (row['Müdürlük']) {
+                            const rawMudurluk = row['Müdürlük'].toString().trim();
+                            row['Müdürlük'] = mudurlukMap[rawMudurluk] || rawMudurluk;
+                        }
+                    });
+                    firstExcelRaw = sheetJson;
                     loadSecond();
                 } catch(err) {
                     handleError('Ham dosya okunamadı.', err.message);
@@ -842,16 +959,6 @@
 
         function isDateHeader(h) { return /tarih/i.test(h); }
 
-        function toJsDate(v) {
-            if (v === undefined || v === null || v === '') return '';
-            if (typeof v === 'number') { // Excel serial
-                const epoch = new Date(Math.round((v - 25569) * 86400 * 1000));
-                return isNaN(epoch) ? '' : epoch;
-            }
-            const d = new Date(v);
-            return isNaN(d) ? '' : d;
-        }
-
         // Paketle: tüm sütunlar korunsun; sadece SHDB Taslak seçimlerine uyan satırlar kalsın
         function doPackageFull(allRawRows, templateRows) {
             const monthVal = document.getElementById('package-month').value; // yyyy-mm
@@ -928,6 +1035,9 @@
             entryPoint.classList.add('hidden');
             reportContent.classList.remove('hidden');
             header.classList.remove('hidden');
+            document.querySelector('.presentation-controls').classList.remove('hidden');
+            document.getElementById('user-info').classList.add('hidden');
+
 
             const mudurlukler = [];
             cleanedDataGlobal.forEach(item => {
@@ -1098,21 +1208,16 @@
                     tur: (row['Tür'] || '').toString().trim(),
                     lokasyon: (row['Lokasyon'] || '').toString().trim(),
                     veriAraligi: (row['Veri Aralığı'] || '').toString().trim().toLocaleUpperCase('tr-TR'),
-                    deger: parseFloat(row['Değer']) || 0,
-                    sonTarih: row['Son Tarih']
+                    deger: parseFloat(row['Değer']),
+                    sonTarih: row['Son Tarih'],
+                    veriSorumlusu: row['Veri Sorumlusu'],
+                    eksikGiris: row['Eksik Giriş']
                 })).filter(r => r.hizmet && r.tur && r.veriAraligi);
 
                 // Yardımcılar
                 const monthNames = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
-                const toJSDate = (dateInput) => {
-                    if (typeof dateInput === 'number' && dateInput > 25569) {
-                        return new Date(Math.round((dateInput - 25569) * 86400 * 1000));
-                    }
-                    const d = new Date(dateInput);
-                    return (d instanceof Date && !isNaN(d)) ? d : null;
-                };
                 const getYear = (v) => excelDateToYear(v);
-                const getMonthIndex = (v) => { const d = toJSDate(v); return d ? d.getMonth() : null; };
+                const getMonthIndex = (v) => { const d = toJsDate(v); return d ? d.getMonth() : null; };
 
                 // Yılları çıkar ve son yılı belirle
                 const allYearsSet = new Set();
@@ -1144,7 +1249,13 @@
                 // Arayüz
                 dataCheckerContainer.classList.remove('hidden');
                 reportContent.classList.add('hidden');
-                header.classList.add('hidden');
+                const user = JSON.parse(sessionStorage.getItem('loggedInUser'));
+                if(user) {
+                    header.classList.remove('hidden');
+                    document.getElementById('user-info').classList.remove('hidden');
+                    document.querySelector('.presentation-controls').classList.add('hidden');
+                }
+
                 dataCheckerContainer.classList.add('compact');
                 dataCheckerContainer.innerHTML = `
                     <div style="background: rgba(58, 110, 165, 0.1); border-left: 4px solid var(--primary-accent); padding: 1rem; margin-bottom: 1.5rem; border-radius: 0 8px 8px 0;">
@@ -1161,7 +1272,7 @@
                     </div>
                     
                     <div id="data-checker-controls">
-                        <label>Hizmet: 
+                         <label>Hizmet: 
                             <select id="filter-hizmet">
                                 <option value="">Tümü</option>
                                 ${hizmetOptions.map(h => `<option value="${h.replace(/"/g,'&quot;')}">${h}</option>`).join('')}
@@ -1176,6 +1287,7 @@
                         <label>Lokasyon: 
                             <select id="filter-lokasyon">
                                 <option value="">Tümü</option>
+                                <option value="ISTANBUL_GENELI_TOPLAM">İstanbul Geneli (Toplam)</option>
                                 ${lokasyonOptions.map(l => `<option value="${l.replace(/"/g,'&quot;')}">${l}</option>`).join('')}
                             </select>
                         </label>
@@ -1191,6 +1303,11 @@
                         <label style="display:flex;align-items:center;gap:6px;">
                             <input type="checkbox" id="toggle-error-col" checked /> Hata Açıklaması
                         </label>
+                         <div style="margin-left: auto; display: flex; gap: 1rem;">
+                              <button id="missing-entry-report-btn" class="action-btn" style="background-color: #dc3545; font-size: 0.9rem; padding: 8px 16px;">Eksik Giriş Raporu</button>
+                             <button id="download-merged-btn" class="action-btn" style="background-color: #28a745; font-size: 0.9rem; padding: 8px 16px;">Birleştirilmiş Ham Veriyi İndir</button>
+                             <button id="download-pivot-btn" class="action-btn" style="background-color: #17a2b8; font-size: 0.9rem; padding: 8px 16px;">Görüntülenen Pivot'u İndir</button>
+                        </div>
                     </div>
                     <div id="data-table-container">
                         <table id="data-table">
@@ -1205,8 +1322,9 @@
                 thead.innerHTML = `<tr>
                     <th>Hizmet Başlığı</th>
                     <th>Tür</th>
+                    <th>Lokasyon</th>
                     ${yearlyYears.map(y => `<th class="col-yearly">${y}</th>`).join('')}
-                    ${lastMonthWithData !== null ? monthNames.slice(0, lastMonthWithData + 1).map((m)=>`<th class=\"col-monthly\">${lastYear} ${m}</th>`).join('') : ''}
+                    ${lastMonthWithData !== null ? monthNames.slice(0, lastMonthWithData + 1).map((m)=>`<th class="col-monthly">${lastYear} ${m}</th>`).join('') : ''}
                     <th class="col-error">Hata Açıklaması</th>
                 </tr>`;
 
@@ -1217,6 +1335,28 @@
                 const toggleYearly = dataCheckerContainer.querySelector('#toggle-yearly');
                 const toggleMonthly = dataCheckerContainer.querySelector('#toggle-monthly');
                 const toggleErrorCol = dataCheckerContainer.querySelector('#toggle-error-col');
+
+                function aggregateDataForIstanbul(data) {
+                    const aggregationMap = new Map();
+                     data.forEach(row => {
+                        const sonTarihObj = toJsDate(row.sonTarih);
+                        const dateKey = sonTarihObj ? `${sonTarihObj.getFullYear()}-${sonTarihObj.getMonth()}-${sonTarihObj.getDate()}` : 'no-date';
+
+                        const key = `${row.mudurluk}|${row.hizmet}|${row.tur}|${row.veriAraligi}|${dateKey}`;
+
+                        if (!aggregationMap.has(key)) {
+                            aggregationMap.set(key, { 
+                                ...row, 
+                                deger: 0, 
+                                lokasyon: 'İstanbul Geneli (Toplam)' 
+                            });
+                        }
+                        const aggregatedRow = aggregationMap.get(key);
+                        aggregatedRow.deger += (row.deger || 0);
+                    });
+                    return Array.from(aggregationMap.values());
+                }
+
 
                 function applyFilters(data) {
                     const h = hizmetSelect.value;
@@ -1229,14 +1369,14 @@
                     // Ana gruplama: Hizmet Başlığı + Tür + Veri Aralığı
                     const groups = new Map();
                     filtered.forEach(r => {
-                        const key = `${r.hizmet}||${r.tur}||${r.veriAraligi}`;
-                        if (!groups.has(key)) groups.set(key, { hizmet: r.hizmet, tur: r.tur, veriAraligi: r.veriAraligi, byYear: {}, byMonthLastYear: {} });
+                        const key = `${r.hizmet}||${r.tur}||${r.veriAraligi}||${r.lokasyon}`;
+                        if (!groups.has(key)) groups.set(key, { hizmet: r.hizmet, tur: r.tur, veriAraligi: r.veriAraligi, lokasyon: r.lokasyon, byYear: {}, byMonthLastYear: {} });
                         const g = groups.get(key);
                         const y = getYear(r.sonTarih);
                         if (!y) return;
                         g.byYear[y] = (g.byYear[y] || 0) + (r.deger || 0);
                         if (y === lastYear) {
-                            const m = getMonthIndex(r.sonTarih); // 0..11
+                            const m = getMonthIndex(r.sonTarih); 
                             if (m !== null) {
                                 g.byMonthLastYear[m] = (g.byMonthLastYear[m] || 0) + (r.deger || 0);
                             }
@@ -1244,22 +1384,21 @@
                     });
                     return Array.from(groups.values());
                 }
-
-                // Aynı hizmet + veri aralığı + yıl/ay düzeyinde diğer türlerde >0 iken 0 olanları tespit için özetler
+                
                 function buildCrossTypeLookups(filtered) {
-                    const yearlyLookup = new Map(); // key: hizmet||veriAraligi||year -> { tur: value }
-                    const monthlyLookup = new Map(); // key: hizmet||veriAraligi||month -> { tur: value } (sadece son yıl)
+                    const yearlyLookup = new Map(); 
+                    const monthlyLookup = new Map();
                     filtered.forEach(r => {
                         const y = getYear(r.sonTarih);
                         if (!y) return;
-                        const keyYear = `${r.hizmet}||${r.veriAraligi}||${y}`;
+                        const keyYear = `${r.hizmet}||${r.veriAraligi}||${y}||${r.lokasyon}`;
                         const bucketYear = yearlyLookup.get(keyYear) || {};
                         bucketYear[r.tur] = (bucketYear[r.tur] || 0) + (r.deger || 0);
                         yearlyLookup.set(keyYear, bucketYear);
                         if (y === lastYear) {
                             const m = getMonthIndex(r.sonTarih);
                             if (m !== null) {
-                                const keyMonth = `${r.hizmet}||${r.veriAraligi}||${m}`;
+                                const keyMonth = `${r.hizmet}||${r.veriAraligi}||${m}||${r.lokasyon}`;
                                 const bucketMonth = monthlyLookup.get(keyMonth) || {};
                                 bucketMonth[r.tur] = (bucketMonth[r.tur] || 0) + (r.deger || 0);
                                 monthlyLookup.set(keyMonth, bucketMonth);
@@ -1267,50 +1406,29 @@
                         }
                     });
 
-                    // Çatışmalı (0 ve >0 birlikte) kombinasyonlara katkıda bulunan satırları işaretle
-                    const yearlyContrib = new Set(); // key: hizmet||veriAraligi||tur||year
-                    yearlyLookup.forEach((bucket, key) => {
-                        const values = Object.values(bucket);
-                        const hasPos = values.some(v => (v || 0) > 0);
-                        const hasZero = values.some(v => (v || 0) === 0);
-                        if (hasPos && hasZero) {
-                            const [hizmet, veriAraligi, year] = key.split('||');
-                            // Tüm türleri ekle (hem 0 olanlar hem de >0 olanlar)
-                            Object.entries(bucket).forEach(([tur, _]) => {
-                                yearlyContrib.add(`${hizmet}||${veriAraligi}||${tur}||${year}`);
-                            });
-                        }
-                    });
-
-                    const monthlyContrib = new Set(); // key: hizmet||veriAraligi||tur||month
-                    monthlyLookup.forEach((bucket, key) => {
-                        const values = Object.values(bucket);
-                        const hasPos = values.some(v => (v || 0) > 0);
-                        const hasZero = values.some(v => (v || 0) === 0);
-                        if (hasPos && hasZero) {
-                            const [hizmet, veriAraligi, month] = key.split('||');
-                            // Tüm türleri ekle (hem 0 olanlar hem de >0 olanlar)
-                            Object.entries(bucket).forEach(([tur, _]) => {
-                                monthlyContrib.add(`${hizmet}||${veriAraligi}||${tur}||${month}`);
-                            });
-                        }
-                    });
-                    
-                    return { yearlyLookup, monthlyLookup, yearlyContrib, monthlyContrib };
+                    return { yearlyLookup, monthlyLookup };
                 }
 
                 function renderBody() {
                     const tbody = dataCheckerContainer.querySelector('#data-table-body');
                     tbody.innerHTML = '';
 
-                    const filtered = applyFilters(normalized);
-                    const groups = groupData(filtered);
-                    const { yearlyLookup, monthlyLookup, yearlyContrib, monthlyContrib } = buildCrossTypeLookups(filtered);
+                    const h = hizmetSelect.value;
+                    const m = mudurlukSelect.value;
+                    const l = lokasyonSelect.value;
+                    let processedData = normalized.filter(r => (h ? r.hizmet === h : true) && (m ? r.mudurluk === m : true));
+                    if (l === 'ISTANBUL_GENELI_TOPLAM') {
+                        processedData = aggregateDataForIstanbul(processedData);
+                    } else if (l) { 
+                        processedData = processedData.filter(r => r.lokasyon === l);
+                    }
+                    
+                    const groups = groupData(processedData);
+                    const { yearlyLookup, monthlyLookup } = buildCrossTypeLookups(processedData);
                     
                     const monthsCount = (lastMonthWithData !== null ? lastMonthWithData + 1 : 0);
-                    const totalCols = 2 + yearlyYears.length + monthsCount + 1; // Hizmet + Tür + yıllık + aylık + hata
+                    const totalCols = 3 + yearlyYears.length + monthsCount + 1;
 
-                    // Hizmet başlıklarına göre gruplandır, sonra Veri Aralığı alt grupları oluştur
                     const hizmetOrder = [...new Set(groups.map(g => g.hizmet))];
                     hizmetOrder.forEach(hizmetAdi => {
                         const trGroup = document.createElement('tr');
@@ -1336,77 +1454,63 @@
                                 const cells = [];
                                 let hasErrorInRow = false;
 
-                                // Metin hücreleri
                                 cells.push(`<td>${g.hizmet}</td>`);
                                 cells.push(`<td>${g.tur}</td>`);
+                                cells.push(`<td>${g.lokasyon}</td>`);
 
-                                // Yıllık hücreler
                                 yearlyYears.forEach(y => {
                                     const val = g.byYear[y] || 0;
                                     let cls = '';
                                     let tip = '';
 
-                                    const crossKey = `${g.hizmet}||${g.veriAraligi}||${y}`;
+                                    const crossKey = `${g.hizmet}||${g.veriAraligi}||${y}||${g.lokasyon}`;
                                     const bucket = yearlyLookup.get(crossKey) || {};
                                     const hasAnyPositive = Object.values(bucket).some(v => (v || 0) > 0);
                                     if (hasAnyPositive && val === 0) {
-                                        cls = 'risk-inconsistent';
+                                        cls = 'risk-inconsistent'; 
                                         hasErrorInRow = true;
                                         const positiveList = Object.entries(bucket).filter(([t,v]) => t !== g.tur && (v || 0) > 0).map(([t,v]) => `${t}=${formatNumber(v)}`).join(', ');
-                                        tip = `Tutarsızlık: Yıl ${y}, ${g.veriAraligi}. ${g.tur}=0 iken diğer türlerde değer var: ${positiveList}`;
-                                        errorMessages.push(`Yıl ${y} Tutarsızlık`);
+                                        const fullErrorMessage = `Tutarsızlık (Yıl ${y}): ${g.tur}=0 iken diğer türlerde değer var: ${positiveList}`;
+                                        tip = fullErrorMessage;
+                                        errorMessages.push(fullErrorMessage);
                                     }
-                                    const content = (g.tur.toLocaleLowerCase('tr-TR').includes('bütçe') ? formatCurrency(val) : formatNumber(val));
-                                    cells.push(`<td class="col-yearly ${cls}" ${tip ? `title="${tip}"` : ''}>${content}</td>`);
+                                    cells.push(`<td class="col-yearly ${cls}" ${tip ? `title="${tip}"` : ''}>${formatNumber(val)}</td>`);
                                 });
 
-                                // Aylık hücreler
                                 let prevCumMonthValue = null;
                                 for (let m = 0; m <= (lastMonthWithData ?? -1); m++) {
                                     const val = g.byMonthLastYear[m] || 0;
                                     let cls = '';
-                                    let tip = '';
-                                    
-                                    const crossMonthKey = `${g.hizmet}||${g.veriAraligi}||${m}`;
+                                    let monthlyTips = [];
+
+                                    const crossMonthKey = `${g.hizmet}||${g.veriAraligi}||${m}||${g.lokasyon}`;
                                     const bucketMonth = monthlyLookup.get(crossMonthKey) || {};
                                     const hasAnyPositiveMonth = Object.values(bucketMonth).some(v => (v || 0) > 0);
                                     if (hasAnyPositiveMonth && val === 0) {
-                                        cls = 'risk-inconsistent';
+                                        cls = 'risk-inconsistent'; 
                                         hasErrorInRow = true;
                                         const positiveListMonth = Object.entries(bucketMonth).filter(([t,v]) => t !== g.tur && (v || 0) > 0).map(([t,v]) => `${t}=${formatNumber(v)}`).join(', ');
-                                        tip = `Tutarsızlık: ${lastYear} ${monthNames[m]}, ${g.veriAraligi}. ${g.tur}=0; Diğer >0: ${positiveListMonth}`;
-                                        errorMessages.push(`${monthNames[m]} Tutarsızlık`);
+                                        const fullErrorMessage = `Tutarsızlık (${lastYear} ${monthNames[m]}): ${g.tur}=0; Diğer >0: ${positiveListMonth}`;
+                                        monthlyTips.push(fullErrorMessage);
+                                        errorMessages.push(fullErrorMessage);
                                     }
                                     
-                                    if (g.veriAraligi === 'KÜMÜLATİF' || g.veriAraligi === 'BGG') {
-                                        if (prevCumMonthValue !== null && val < prevCumMonthValue) {
-                                            cls = cls ? cls + ' risk-decreasing' : 'risk-decreasing';
-                                            tip = tip ? tip + ' | ' : '';
-                                            tip += `Azalan ${g.veriAraligi}: ${monthNames[m-1]}=${formatNumber(prevCumMonthValue)} > ${monthNames[m]}=${formatNumber(val)}`;
-                                            errorMessages.push(`${monthNames[m]} Azalan Değer`);
-                                            hasErrorInRow = true;
-                                        }
-                                        prevCumMonthValue = val;
+                                    if ((g.veriAraligi === 'KÜMÜLATİF' || g.veriAraligi === 'BGG') && prevCumMonthValue !== null && val < prevCumMonthValue) {
+                                        cls = cls.includes('risk-decreasing') ? cls : (cls ? cls + ' risk-decreasing' : 'risk-decreasing');
+                                        const fullErrorMessage = `Azalan Değer (${monthNames[m]}): Önceki ay (${monthNames[m-1]}) ${formatNumber(prevCumMonthValue)} > Bu ay ${formatNumber(val)}`;
+                                        monthlyTips.push(fullErrorMessage);
+                                        errorMessages.push(fullErrorMessage);
+                                        hasErrorInRow = true;
                                     }
-                                    const content = (g.tur.toLocaleLowerCase('tr-TR').includes('bütçe') ? formatCurrency(val) : formatNumber(val));
-                                    cells.push(`<td class="col-monthly ${cls}" ${tip ? `title="${tip}"` : ''}>${content}</td>`);
+                                    prevCumMonthValue = val;
+                                    
+                                    const tip = monthlyTips.join(' | ');
+                                    cells.push(`<td class="col-monthly ${cls}" ${tip ? `title="${tip}"` : ''}>${formatNumber(val)}</td>`);
                                 }
 
-                                // Hata açıklaması
-                                cells.push(`<td class="col-error">${[...new Set(errorMessages)].join(', ')}</td>`);
+                                cells.push(`<td class="col-error">${[...new Set(errorMessages)].join('; ')}</td>`);
                                 tr.innerHTML = cells.join('');
-
-                                if (onlyErrorsCheckbox.checked) {
-                                    let isContributor = false;
-                                    for (const y of yearlyYears) { if (yearlyContrib.has(`${g.hizmet}||${g.veriAraligi}||${g.tur}||${y}`)) { isContributor = true; break; } }
-                                    if (!isContributor) {
-                                        for (let m = 0; m <= (lastMonthWithData ?? -1); m++) { if (monthlyContrib.has(`${g.hizmet}||${g.veriAraligi}||${g.tur}||${m}`)) { isContributor = true; break; } }
-                                    }
-                                    if (!(hasErrorInRow || isContributor)) {
-                                        return;
-                                    }
-                                }
-
+                                if (onlyErrorsCheckbox.checked && !hasErrorInRow) { return; }
                                 tbody.appendChild(tr);
                                 subRowCount++;
                                 groupRowCount++;
@@ -1418,11 +1522,117 @@
                     applyColumnToggles();
                 }
 
+                function downloadPivotAsExcel() {
+                    const excelData = [];
+                    const h = hizmetSelect.value;
+                    const m = mudurlukSelect.value;
+                    const l = lokasyonSelect.value;
+                    let processedData = normalized.filter(r => (h ? r.hizmet === h : true) && (m ? r.mudurluk === m : true));
+                    if (l === 'ISTANBUL_GENELI_TOPLAM') {
+                        processedData = aggregateDataForIstanbul(processedData);
+                    } else if (l) { 
+                        processedData = processedData.filter(r => r.lokasyon === l);
+                    }
+
+                    const groups = groupData(processedData);
+                    const { yearlyLookup, monthlyLookup } = buildCrossTypeLookups(processedData);
+                    
+                    const headers = ['Hizmet Başlığı', 'Tür', 'Lokasyon', 'Veri Aralığı'];
+                    yearlyYears.forEach(y => headers.push(y.toString()));
+                    for (let m = 0; m <= (lastMonthWithData ?? -1); m++) {
+                        headers.push(`${lastYear} ${monthNames[m]}`);
+                    }
+                    headers.push('Hata Açıklaması');
+
+                    groups.forEach(g => {
+                        const rowData = {};
+                        rowData['Hizmet Başlığı'] = g.hizmet;
+                        rowData['Tür'] = g.tur;
+                        rowData['Lokasyon'] = g.lokasyon;
+                        rowData['Veri Aralığı'] = g.veriAraligi;
+
+                        const errorMessages = new Set();
+
+                        yearlyYears.forEach(y => {
+                            const val = g.byYear[y] || 0;
+                            rowData[y.toString()] = val;
+                            const crossKey = `${g.hizmet}||${g.veriAraligi}||${y}||${g.lokasyon}`;
+                            const bucket = yearlyLookup.get(crossKey) || {};
+                            if (Object.values(bucket).some(v => v > 0) && val === 0) {
+                                const positiveList = Object.entries(bucket).filter(([t,v]) => t !== g.tur && (v || 0) > 0).map(([t,v]) => `${t}=${formatNumber(v)}`).join(', ');
+                                const fullErrorMessage = `Tutarsızlık (Yıl ${y}): ${g.tur}=0 iken diğer türlerde değer var: ${positiveList}`;
+                                errorMessages.add(fullErrorMessage);
+                            }
+                        });
+
+                        let prevCumMonthValue = null;
+                        for (let m = 0; m <= (lastMonthWithData ?? -1); m++) {
+                            const val = g.byMonthLastYear[m] || 0;
+                            rowData[`${lastYear} ${monthNames[m]}`] = val;
+                            const crossMonthKey = `${g.hizmet}||${g.veriAraligi}||${m}||${g.lokasyon}`;
+                            const bucketMonth = monthlyLookup.get(crossMonthKey) || {};
+                            if (Object.values(bucketMonth).some(v => v > 0) && val === 0) {
+                                 const positiveListMonth = Object.entries(bucketMonth).filter(([t,v]) => t !== g.tur && (v || 0) > 0).map(([t,v]) => `${t}=${formatNumber(v)}`).join(', ');
+                                const fullErrorMessage = `Tutarsızlık (${lastYear} ${monthNames[m]}): ${g.tur}=0; Diğer >0: ${positiveListMonth}`;
+                                errorMessages.add(fullErrorMessage);
+                            }
+                            if ((g.veriAraligi === 'KÜMÜLATİF' || g.veriAraligi === 'BGG') && prevCumMonthValue !== null && val < prevCumMonthValue) {
+                                 const fullErrorMessage = `Azalan Değer (${monthNames[m]}): Önceki ay (${monthNames[m-1]}) ${formatNumber(prevCumMonthValue)} > Bu ay ${formatNumber(val)}`;
+                                errorMessages.add(fullErrorMessage);
+                            }
+                            prevCumMonthValue = val;
+                        }
+                        rowData['Hata Açıklaması'] = [...errorMessages].join('; ');
+                        excelData.push(rowData);
+                    });
+
+                    if (excelData.length === 0) {
+                        alert("Dışa aktarılacak veri bulunamadı.");
+                        return;
+                    }
+                    const worksheet = XLSX.utils.json_to_sheet(excelData, { header: headers });
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, 'Pivot Hata Raporu');
+                    XLSX.writeFile(workbook, 'pivot_hata_raporu.xlsx');
+                }
+
                 // Olaylar
                 hizmetSelect.addEventListener('change', renderBody);
                 lokasyonSelect.addEventListener('change', renderBody);
                 mudurlukSelect.addEventListener('change', renderBody);
                 onlyErrorsCheckbox.addEventListener('change', renderBody);
+                document.getElementById('download-merged-btn').addEventListener('click', () => {
+                    if (rawDataForChecker.length > 0) {
+                         const dataToExport = rawDataForChecker.map(row => {
+                            const newRow = {};
+                            standardHeaders.forEach(header => {
+                                newRow[header] = row[header];
+                            });
+
+                            const dateColumns = ['İlk Tarih', 'Son Tarih', 'Güncel Olması Gereken Tarih', 'Veri Giriş Tarihi'];
+                            dateColumns.forEach(colName => {
+                                if (newRow[colName]) {
+                                    const jsDate = toJsDate(newRow[colName]);
+                                    if (jsDate) {
+                                        newRow[colName] = jsDate;
+                                    }
+                                }
+                            });
+                            return newRow;
+                        });
+
+                        const worksheet = XLSX.utils.json_to_sheet(dataToExport, { header: standardHeaders, cellDates: true });
+                        const workbook = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(workbook, worksheet, 'Birleştirilmiş Veri');
+                        XLSX.writeFile(workbook, 'birlesik_ham_veri.xlsx');
+                    } else {
+                        alert("İndirilecek birleştirilmiş veri bulunamadı.");
+                    }
+                });
+                document.getElementById('download-pivot-btn').addEventListener('click', downloadPivotAsExcel);
+                document.getElementById('missing-entry-report-btn').addEventListener('click', renderMissingEntryReport);
+
+
                 function applyColumnToggles() {
                     const table = dataCheckerContainer.querySelector('#data-table');
                     table.querySelectorAll('.col-yearly').forEach(el => { el.style.display = toggleYearly.checked ? '' : 'none'; });
@@ -1439,6 +1649,96 @@
                 handleError('Veri kontrol aracı hazırlanırken bir hata oluştu.', err.message);
             }
         }
+
+        function renderMissingEntryReport() {
+            const missingEntries = rawDataForChecker.filter(row => row['Eksik Giriş'] === "Veri Girişi Sağlanmalı");
+
+            if (missingEntries.length === 0) {
+                alert("Veri girişi eksiği olan personel bulunamadı.");
+                return;
+            }
+
+            const reportData = missingEntries.map(row => ({
+                'Veri Sorumlusu': row['Veri Sorumlusu'] || 'Bilinmiyor',
+                'Hizmet Başlığı': row['Hizmet Başlığı'],
+                'Tür': row['Tür'],
+                'Lokasyon': row['Lokasyon'],
+                'İlk Tarih': toJsDate(row['İlk Tarih']),
+                'Son Tarih': toJsDate(row['Son Tarih']),
+                'Dosya Adı': row['__sourceFile'],
+                'Sayfa Adı': row['__sourceSheet'],
+            }));
+
+            const modal = document.createElement('div');
+            modal.style.position = 'fixed';
+            modal.style.top = '0';
+            modal.style.left = '0';
+            modal.style.width = '100%';
+            modal.style.height = '100%';
+            modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+            modal.style.zIndex = '10002';
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+
+            let tableHTML = `<table style="width: 100%; border-collapse: collapse; background: white; font-size: 0.8rem;">
+                                <thead>
+                                    <tr>
+                                        <th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">Veri Sorumlusu</th>
+                                        <th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">Hizmet Başlığı</th>
+                                        <th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">Tür</th>
+                                        <th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">Lokasyon</th>
+                                        <th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">Son Tarih</th>
+                                        <th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">Dosya Adı</th>
+                                        <th style="padding: 8px; border: 1px solid #ddd; background-color: #f2f2f2;">Sayfa Adı</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+             reportData.forEach(item => {
+                const sonTarihFormatted = item['Son Tarih'] ? item['Son Tarih'].toLocaleDateString('tr-TR') : '';
+                tableHTML += `<tr>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item['Veri Sorumlusu']}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item['Hizmet Başlığı']}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item['Tür']}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item['Lokasyon']}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${sonTarihFormatted}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item['Dosya Adı']}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item['Sayfa Adı']}</td>
+                              </tr>`;
+            });
+            tableHTML += `</tbody></table>`;
+
+            modal.innerHTML = `
+                <div style="background: white; padding: 2rem; border-radius: 12px; max-width: 90vw; width: 90%; max-height: 80vh; overflow-y: auto;">
+                    <h2 style="margin-bottom: 1rem;">Eksik Veri Girişi Raporu</h2>
+                    ${tableHTML}
+                    <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+                        <button id="download-missing-report-btn" class="action-btn">Raporu İndir (Excel)</button>
+                        <button id="close-modal-btn" class="action-btn secondary">Kapat</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                     document.body.removeChild(modal);
+                }
+            });
+
+            document.getElementById('close-modal-btn').addEventListener('click', () => {
+                document.body.removeChild(modal);
+            });
+
+            document.getElementById('download-missing-report-btn').addEventListener('click', () => {
+                const worksheet = XLSX.utils.json_to_sheet(reportData, {cellDates: true});
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, 'Eksik Giriş Raporu');
+                XLSX.writeFile(workbook, 'eksik_veri_girisi_raporu.xlsx');
+            });
+        }
+
 
         // --- TOGGLE FONKSİYONU ---
         function toggleInstructions(elementId) {
@@ -1463,8 +1763,8 @@
             if (type === 'raw') {
                 const sampleData = [
                     {'Müdürlük':'Sosyal Hizmetler Şube Müdürlüğü','Hizmet Başlığı':'İstanbulkart','Tür':'Başvuru','Lokasyon':'Adalar','Veri Aralığı':'Aylık','İlk Tarih':'31.01.2025','Son Tarih':'02.03.2025','Veri Sorumlusu':'Ahmet Yılmaz','Güncel Olması Gereken Tarih':'30.07.2025','Eksik Giriş':'','Değer':15,'Veri Giriş Tarihi':'14.04.2025'},
-                    {'Müdürlük':'Sosyal Hizmetler Şube Müdürlüğü','Hizmet Başlığı':'İstanbulkart','Tür':'Başvuru','Lokasyon':'Arnavutköy','Veri Aralığı':'Aylık','İlk Tarih':'31.01.2025','Son Tarih':'02.03.2025','Veri Sorumlusu':'Ahmet Yılmaz','Güncel Olması Gereken Tarih':'30.07.2025','Eksik Giriş':'','Değer':1319,'Veri Giriş Tarihi':'14.04.2025'},
-                    {'Müdürlük':'Sosyal Hizmetler Şube Müdürlüğü','Hizmet Başlığı':'İstanbulkart','Tür':'Başvuru','Lokasyon':'Ataşehir','Veri Aralığı':'Aylık','İlk Tarih':'31.01.2025','Son Tarih':'02.03.2025','Veri Sorumlusu':'Ahmet Yılmaz','Güncel Olması Gereken Tarih':'30.07.2025','Eksik Giriş':'','Değer':584,'Veri Giriş Tarihi':'14.04.2025'},
+                    {'Müdürlük':'SHM','Hizmet Başlığı':'İstanbulkart','Tür':'Başvuru','Lokasyon':'Arnavutköy','Veri Aralığı':'Aylık','İlk Tarih':'31.01.2025','Son Tarih':'02.03.2025','Veri Sorumlusu':'Ahmet Yılmaz','Güncel Olması Gereken Tarih':'30.07.2025','Eksik Giriş':'','Değer':1319,'Veri Giriş Tarihi':'14.04.2025'},
+                    {'Müdürlük':'KAHM','Hizmet Başlığı':'İstanbulkart','Tür':'Başvuru','Lokasyon':'Ataşehir','Veri Aralığı':'Aylık','İlk Tarih':'31.01.2025','Son Tarih':'02.03.2025','Veri Sorumlusu':'Ahmet Yılmaz','Güncel Olması Gereken Tarih':'30.07.2025','Eksik Giriş':'','Değer':584,'Veri Giriş Tarihi':'14.04.2025'},
                 ];
                 fileName = 'ornek-ham-veri.xlsx';
                 const workbook = XLSX.utils.book_new();
@@ -1498,10 +1798,9 @@
                 const wsOzet = XLSX.utils.json_to_sheet(ozetData);
                 const wsMerkezler = XLSX.utils.json_to_sheet(merkezlerData);
 
-                // Helper to add explanatory notes
                 const appendNote = (ws, note) => {
                     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
-                    const nextRow = range.e.r + 3; // Add some space
+                    const nextRow = range.e.r + 3; 
                     XLSX.utils.sheet_add_aoa(ws, [[note]], {origin: `A${nextRow}`});
                 };
 
@@ -1528,14 +1827,41 @@
             if (user) { sessionStorage.setItem('loggedInUser', JSON.stringify(user)); showAppForUser(user); }
             else { loginError.textContent = 'Kullanıcı adı veya şifre hatalı.'; loginError.classList.remove('hidden'); }
         }
+        
+        function handleLogout() {
+            sessionStorage.removeItem('loggedInUser');
+            loginSection.classList.remove('hidden');
+            appContainer.classList.add('hidden');
+            header.classList.add('hidden');
+            reportContent.classList.add('hidden');
+            dataCheckerContainer.classList.add('hidden');
+            document.getElementById('user-info').classList.add('hidden');
+            document.querySelector('.presentation-controls').classList.add('hidden');
+        }
 
         function showAppForUser(user) {
             loginSection.classList.add('hidden');
             appContainer.classList.remove('hidden');
-            header.classList.add('hidden');
             reportContent.classList.add('hidden');
             entryPoint.classList.remove('hidden');
-            renderEntryPoint();
+            dataCheckerContainer.classList.add('hidden'); 
+            
+            const userInfo = document.getElementById('user-info');
+            const usernameDisplay = document.getElementById('username-display');
+            const logoutBtn = document.getElementById('logout-btn');
+
+            if(user) {
+                 header.classList.remove('hidden');
+                 usernameDisplay.textContent = user.username;
+                 userInfo.classList.remove('hidden');
+                 document.querySelector('.presentation-controls').classList.add('hidden');
+                 logoutBtn.addEventListener('click', handleLogout);
+            } else {
+                 header.classList.add('hidden');
+            }
+
+
+            renderEntryPoint(user);
         }
         
         // --- RAPOR OLUŞTURMA SİHİRBAZI ---
@@ -1582,7 +1908,10 @@
                     selections.mudurlukler = selected;
                     renderStep2();
                 });
-                 document.getElementById('back-to-main-btn').addEventListener('click', renderEntryPoint);
+                 document.getElementById('back-to-main-btn').addEventListener('click', () => {
+                    const user = JSON.parse(sessionStorage.getItem('loggedInUser'));
+                    renderEntryPoint(user);
+                 });
             }
 
             // --- Adım 2: Hizmetler ve Kırılımlar ---
@@ -1826,34 +2155,6 @@
             renderStep1();
         }
 
-        // --- Sayfa Yükleme Olayları ---
-        window.addEventListener('DOMContentLoaded', () => {
-            const user = JSON.parse(sessionStorage.getItem('loggedInUser'));
-            if (user) { showAppForUser(user); }
-            else { loginSection.classList.remove('hidden'); appContainer.classList.add('hidden'); }
-        });
-        loginForm.addEventListener('submit', handleLogin);
-        document.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') changeSlide(1); else if (e.key === 'ArrowLeft') changeSlide(-1); });
-        fullscreenBtn.addEventListener('click', toggleFullscreen);
-        
-        reportContent.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            const { clientX: mouseX, clientY: mouseY } = e;
-            contextMenu.style.top = `${mouseY}px`;
-            contextMenu.style.left = `${mouseX}px`;
-            contextMenu.classList.remove('hidden');
-        });
-
-        window.addEventListener('click', () => {
-            contextMenu.classList.add('hidden');
-        });
-
-        document.getElementById('context-download-pdf').addEventListener('click', () => {
-            handlePdfDownload();
-            contextMenu.classList.add('hidden');
-        });
-
-
         async function handlePdfDownload() {
             const { jsPDF } = window.jspdf;
             const slidesToCapture = document.querySelectorAll('.presentation-slide');
@@ -1875,7 +2176,8 @@
             loadingIndicator.style.zIndex = '10001';
             document.body.appendChild(loadingIndicator);
             
-            fullscreenBtn.classList.add('hidden');
+            const presentationControls = document.querySelector('.presentation-controls');
+            presentationControls.classList.add('hidden');
 
             const originalSlideIndex = currentSlideIndex;
             try {
@@ -1914,9 +2216,43 @@
                 if (document.fullscreenElement) { await document.exitFullscreen(); }
                 showSlide(originalSlideIndex); 
                 document.body.removeChild(loadingIndicator);
-                fullscreenBtn.classList.remove('hidden');
+                presentationControls.classList.remove('hidden');
             }
         }
+
+
+        // --- INIT ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedUser = sessionStorage.getItem('loggedInUser');
+            if (savedUser) {
+                showAppForUser(JSON.parse(savedUser));
+            } else {
+                loginSection.classList.remove('hidden');
+            }
+            loginForm.addEventListener('submit', handleLogin);
+            fullscreenBtn.addEventListener('click', toggleFullscreen);
+            document.addEventListener('keydown', (e) => {
+                if (!reportContent.classList.contains('hidden')) {
+                    if (e.key === 'ArrowRight') changeSlide(1);
+                    else if (e.key === 'ArrowLeft') changeSlide(-1);
+                }
+            });
+            
+            // Custom context menu for PDF download
+            reportContent.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                contextMenu.style.top = `${e.clientY}px`;
+                contextMenu.style.left = `${e.clientX}px`;
+                contextMenu.classList.remove('hidden');
+            });
+            document.addEventListener('click', e => {
+                if (!contextMenu.contains(e.target)) contextMenu.classList.add('hidden');
+            });
+             document.getElementById('context-download-pdf').addEventListener('click', () => {
+                contextMenu.classList.add('hidden');
+                handlePdfDownload();
+            });
+        });
     </script>
 </body>
 </html>
